@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+server/data/
+.DS_Store
+
+# local notes (business context), not for the public repo
+CLAUDE.md

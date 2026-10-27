@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#EDEFEA">
+  <title>Buildwise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..800&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500;700&display=swap">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <button class="brand" id="home-link" aria-label="Buildwise home">
+      <svg width="40" height="40" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="var(--accent)"/><path d="M11 27V13l9-4 9 4v14l-9 4z M11 13l9 4 9-4M20 17v14" fill="none" stroke="var(--accent-ink)" stroke-width="2.4" stroke-linejoin="round"/></svg>
+      <div><h1>Buildwise</h1><small>Scan a manual. Build it in 3D.</small></div>
+    </button>
+    <span class="tag" id="mode-tag" hidden>Example</span>
+  </header>
+
+  <!-- ===== HOME / SCAN ===== -->
+  <section id="view-home">
+    <div class="home">
+      <div class="card">
+        <h2>Scan your manual</h2>
+        <p class="muted" style="margin:0">Point the camera at one page at a time and tap the button. Start with the page that lists all the parts.</p>
+        <div class="camera" id="camera" hidden>
+          <video id="video" playsinline muted autoplay></video>
+          <div class="frame"></div><div class="flash" id="flash"></div>
+          <span class="count" id="cam-count">0 pages</span>
+          <button class="shutter" id="shutter" aria-label="Capture this page"></button>
+        </div>
+        <div class="row">
+          <button class="btn primary" id="cam-start">Open camera</button>
+          <label class="btn picker">Upload photos, video or PDF<input id="files" type="file" accept="image/*,video/*,application/pdf,.pdf" multiple></label>
+        </div>
+        <div>
+          <p class="lbl" id="pages-label">Pages · 0</p>
+          <div class="thumbs" id="thumbs"></div>
+          <div class="empty" id="thumbs-empty">No pages yet.</div>
+        </div>
+        <div class="status" id="status" aria-live="polite"></div>
+        <div class="row">
+          <button class="btn primary" id="analyze" disabled>Make my 3D guide</button>
+          <button class="btn" id="stop" hidden>Stop</button>
+          <button class="btn" id="clear" disabled>Clear pages</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Your guides</h2>
+        <div class="guides" id="guides"></div>
+        <p class="lbl" style="margin-top:6px">Tips for a good scan</p>
+        <ul class="muted" style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;font-size:15px">
+          <li>Lay the manual flat in good light, no shadows on the drawings.</li>
+          <li>Fill the frame with one page, phone held straight above it.</li>
+          <li>Include the parts and hardware pages. They give the part letters and counts.</li>
+          <li>Pages can be in any order. Duplicates are fine.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== BUILD ===== -->
+  <section id="view-build" hidden>
+    <div class="layout">
+      <div class="stage-card" id="stage-card">
+        <canvas id="stage" aria-label="3D view of the furniture at the current step. Drag to turn, pinch to zoom, tap a part to identify it."></canvas>
+        <div class="labels" id="labels"></div>
+        <div class="hud"><span class="chip" id="hud">Parts check</span><span class="chip" id="hud2" hidden>Yellow = new in this step</span></div>
+        <div class="hint" id="hint">Drag to turn · pinch to zoom · tap a part</div>
+        <div class="info" id="info" hidden></div>
+        <div class="tools">
+          <button class="tbtn" id="b-zoom" aria-pressed="true" hidden>Close-up</button>
+          <button class="tbtn" id="b-labels" aria-pressed="true">Labels</button>
+          <button class="tbtn" id="b-replay" aria-label="Replay"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v5h5"/></svg></button>
+        </div>
+      </div>
+      <div class="side">
+        <div class="product"><h2 id="p-name"></h2><div class="meta" id="p-meta"></div></div>
+        <div class="progress" id="progress" aria-label="Steps"></div>
+        <article class="card" id="step"></article>
+        <div class="nav"><button class="btn" id="prev">← Back</button><button class="btn primary" id="next">Next step →</button></div>
+        <div class="card ask" id="ask">
+          <p class="lbl" style="margin:0">Stuck on this step?</p>
+          <form id="ask-form"><input id="ask-input" placeholder="e.g. Which way does the hole face?" autocomplete="off"><button class="btn primary" type="submit" id="ask-btn">Ask</button></form>
+          <div class="answer" id="ask-out" hidden></div>
+        </div>
+        <section class="card">
+          <h2>Parts in the box</h2>
+          <p class="muted" style="margin:-8px 0 0;font-size:14px">Hold a real part next to its picture. Tap a picture to find it in 3D.</p>
+          <div class="grid" id="bench"></div>
+        </section>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="overlay" id="ov" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ov-t">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px"><h3 id="ov-t">Actual size</h3><button class="tbtn" id="ov-x">Close</button></div>
+    <p class="muted" style="margin:0" id="ov-d"></p>
+    <div class="ruler" id="ov-svg"></div>
+    <div class="cal">
+      <span><b style="color:var(--fg)">Calibrate once:</b> hold a bank card against the box and slide until the widths match.</span>
+      <div class="cardbox" id="cardbox">bank card · 85.6 mm</div>
+      <input type="range" id="cal" min="2.2" max="9" step="0.01" aria-label="Screen scale">
+    </div>
+  </div>
+</div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

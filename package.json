@@ -1,0 +1,26 @@
+{
+  "name": "buildwise",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Scan a flat-pack furniture manual and build it step by step in 3D.",
+  "scripts": {
+    "dev": "concurrently -n api,web -c yellow,cyan \"node --watch server/index.js\" \"vite\"",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "example": "node scripts/make-example.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.60.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "multer": "^2.0.2",
+    "pdfjs-dist": "4.10.38",
+    "three": "0.160.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^1.2.0",
+    "concurrently": "^9.1.2",
+    "vite": "^5.4.11"
+  }
+}
