@@ -2,7 +2,7 @@
 // Step 0 is "check your parts": every board lies on the floor. Step n (1..N) plays guide.steps[n-1].
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { makeMaterials, makePanel, makeHardware, makeTurnArrow, dirQuat, dirVec, snapToFace, HOLE_FOR } from './parts3d.js';
+import { makeMaterials, makeBody, makeHardware, makeTurnArrow, dirQuat, dirVec, snapToFace, washerThick, HOLE_FOR } from './parts3d.js';
 import { PANEL } from '../guide.js';
 
 const PI = Math.PI;
@@ -90,7 +90,10 @@ export class Viewer {
       // lay it flat with its busiest face up
       const counts = {}; holesOf[it.p.key].forEach(h => (counts[h.face] = (counts[h.face] || 0) + 1));
       guide.hardware.filter(h => h.panel === it.p.key).forEach(h => (counts[h.dir] = (counts[h.dir] || 0) + 3));
-      let up = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+      // shaped parts (frames, seats) stand upright as they are built, which is easiest to recognise;
+      // flat ones (grilles, blades, table tops) lie on their thin side so they do not hide the parts behind them
+      const thin = it.size.indexOf(Math.min(...it.size)), flat = it.size[thin] < 0.35 * Math.max(...it.size);
+      let up = P[it.p.part].shape ? (flat ? ['+x', '+y', '+z'][thin] : '+y') : Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
       if (!up) { const i = it.size.indexOf(Math.min(...it.size)); up = ['+x', '+y', '+z'][i]; }
       const TQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(...UP_ROT[up]));
       const fp = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(), new THREE.Vector3(...it.size)).applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(TQ));
@@ -101,22 +104,39 @@ export class Viewer {
     }
 
     for (const it of panels) {
-      const finish = P[it.p.part].finish || (Math.min(...it.size) <= 4 ? 'hardboard' : null);
+      const part = P[it.p.part];
       const o = this.addObj({ key: it.p.key, part: it.p.part, kind: PANEL, parent: null, size: it.size,
-        build: () => makePanel(it.size, holesOf[it.p.key], finish, this.M),
+        build: () => makeBody(part, holesOf[it.p.key], this.M),
         kfs: [{ s: 0, P: it.trayP, Q: it.trayQ }, { s: it.p.step, P: new THREE.Vector3(...it.p.pos), Q: it.Q }], arc: 260 });
-      const ghost = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(...it.size)),
-        new THREE.LineDashedMaterial({ color: this.colors.accent, dashSize: 14, gapSize: 10 }));
-      ghost.computeLineDistances(); ghost.position.set(...it.p.pos); ghost.quaternion.copy(it.Q); ghost.visible = false;
+      let ghost;
+      if (part.shape) {
+        // see-through copy of the real shape, so a curved part shows where it is going
+        const gm = new THREE.MeshBasicMaterial({ color: this.colors.accent, transparent: true, opacity: 0.22, depthWrite: false });
+        ghost = makeBody({ ...part }, [], this.M);
+        ghost.traverse(m => { if (m.isMesh) { m.material = gm; m.castShadow = false; } if (m.isLineSegments) m.visible = false; });
+      } else {
+        ghost = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(...it.size)),
+          new THREE.LineDashedMaterial({ color: this.colors.accent, dashSize: 14, gapSize: 10 }));
+        ghost.computeLineDistances();
+      }
+      ghost.position.set(...it.p.pos); ghost.quaternion.copy(it.Q); ghost.visible = false;
       this.root.add(ghost); o.ghost = ghost;
     }
     const sizeOf = Object.fromEntries(panels.map(it => [it.p.key, it.size]));
+    const shapedOf = Object.fromEntries(panels.map(it => [it.p.key, !!P[it.p.part].shape]));
+    // a washer at the same spot as a screw or bolt: the screw head sits on top of it
+    const atOf = h => (shapedOf[h.panel] ? h.at : snapToFace(h.at, h.dir, sizeOf[h.panel]));
+    const washers = guide.hardware.filter(h => P[h.part].kind === 'washer');
     for (const h of guide.hardware) {
-      const kind = P[h.part].kind, at = snapToFace(h.at, h.dir, sizeOf[h.panel]);
+      const part = P[h.part], kind = part.kind, at = atOf(h);
       const Q = dirQuat(h.dir).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), (h.roll * PI) / 180));
       const Pp = new THREE.Vector3(...at);
-      const from = Pp.clone().add(dirVec(h.dir).multiplyScalar(kind === 'nail' ? 45 : 65));
-      const o = this.addObj({ key: h.key, part: h.part, kind, parent: h.panel, build: () => makeHardware(kind, this.M),
+      if (['screw', 'bolt', 'allen_bolt'].includes(kind)) {
+        const w = washers.find(x => x.panel === h.panel && x.dir === h.dir && Math.hypot(...atOf(x).map((v, i) => v - at[i])) < 3);
+        if (w) Pp.add(dirVec(h.dir).multiplyScalar(washerThick(P[w.part].d_mm || 12)));
+      }
+      const from = Pp.clone().add(dirVec(h.dir).multiplyScalar(kind === 'nail' ? 45 : 65 + (part.len_mm || 0) * 0.6));
+      const o = this.addObj({ key: h.key, part: h.part, kind, parent: h.panel, build: () => makeHardware(kind, this.M, { len: part.len_mm, d: part.d_mm }),
         kfs: [{ s: h.step, P: Pp, Q, fromP: from }], turnStep: h.turn_step });
       o.outDir = dirVec(h.dir);
     }
@@ -320,10 +340,9 @@ export class Viewer {
       let obj;
       if (part.kind === PANEL) {
         const inst = this.guide.panels.find(p => p.part === id);
-        const size = part.size_mm || [400, 18, 300];
-        obj = makePanel(size, inst ? this.holesOf[inst.key] : [], part.finish || (Math.min(...size) <= 4 ? 'hardboard' : null), this.M);
+        obj = makeBody(part, inst ? this.holesOf[inst.key] : [], this.M);
         const o = this.objs.find(x => x.key === inst?.key); if (o) obj.quaternion.copy(o.kfs[0].Q);
-      } else { obj = makeHardware(part.kind, this.M).group; obj.rotation.set(0.35, -0.5, part.kind === 'cam_lock' ? PI / 2 + 0.3 : 0.25); }
+      } else { obj = makeHardware(part.kind, this.M, { len: part.len_mm, d: part.d_mm }).group; obj.rotation.set(0.35, -0.5, part.kind === 'cam_lock' ? PI / 2 + 0.3 : 0.25); }
       const holder = new THREE.Group(); holder.add(obj); ts.add(holder);
       const box = new THREE.Box3().setFromObject(holder), c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3()).length();
       const dir = part.kind === PANEL ? new THREE.Vector3(0.55, 1, 1.15) : new THREE.Vector3(0.3, 0.55, 1);

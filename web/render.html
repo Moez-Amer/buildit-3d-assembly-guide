@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Buildwise render</title>
+  <!-- Used by the server only: renders a guide's 3D model to pictures so Claude can compare it with the manual. -->
+</head>
+<body style="margin:0;background:#fff">
+  <div class="stage-card" id="stage-card" style="width:960px;border-radius:0;border:0">
+    <canvas id="stage" style="height:720px"></canvas>
+    <div class="labels" id="labels"></div>
+  </div>
+  <script type="module" src="/src/render.js"></script>
+</body>
+</html>

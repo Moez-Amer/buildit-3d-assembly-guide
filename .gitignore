@@ -6,3 +6,6 @@ server/data/
 
 # local notes (business context), not for the public repo
 CLAUDE.md
+
+# course documents with names and matriculation numbers
+proposal/

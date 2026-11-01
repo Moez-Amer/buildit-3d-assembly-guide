@@ -15,7 +15,11 @@ const ICON_TIP = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" st
 let viewer = null, guide = null, cur = 0, thumbs = {}, first = {}, issues = [];
 
 function sizeText(p) {
-  if (p.kind === PANEL && p.size_mm) { const s = p.size_mm.slice().sort((a, b) => b - a); return `${s.map(v => Math.round(v)).join(' × ')} mm`; }
+  if (p.kind === PANEL && p.size_mm) { const s = p.size_mm.slice().sort((a, b) => b - a); return `${p.shape ? 'about ' : ''}${s.map(v => Math.round(v)).join(' × ')} mm`; }
+  const r = v => Math.round(v * 10) / 10;
+  if (p.kind === 'washer' && p.d_mm) return `${r(p.d_mm)} mm across`;
+  if (p.d_mm && p.len_mm) return `${r(p.d_mm)} × ${r(p.len_mm)} mm`;
+  if (p.len_mm) return `${r(p.len_mm)} mm long`;
   return '';
 }
 
@@ -93,7 +97,7 @@ function renderBench(s) {
       <div class="top"><span class="id">${esc(id)}</span><span class="qty">× ${p.qty}</span></div>
       <div class="nm">${esc(p.name)}</div>${sizeText(p) ? `<div class="sz">${sizeText(p)}</div>` : ''}
       ${p.look ? `<div class="lk">${esc(p.look)}</div>` : ''}
-      ${hasProfile(p.kind) ? `<button class="act" data-act="${esc(id)}">Actual size</button>` : ''}
+      ${hasProfile(p.kind, p) ? `<button class="act" data-act="${esc(id)}">Actual size</button>` : ''}
     </div>`).join('');
 }
 
@@ -102,7 +106,7 @@ function showInfo(id, note) {
   $('info').innerHTML = `${thumbs[id] ? `<img src="${thumbs[id]}" alt="">` : ''}<div><div><b>${esc(id)}</b> · ${esc(p.name)}</div>
     ${sizeText(p) ? `<div class="muted" style="font-size:13px">${sizeText(p)}</div>` : ''}
     ${note ? `<div class="muted" style="font-size:12px">${esc(note)}</div>` : ''}
-    ${hasProfile(p.kind) ? `<button class="tbtn" style="margin-top:6px;height:32px" data-act="${esc(id)}">See actual size</button>` : ''}</div>`;
+    ${hasProfile(p.kind, p) ? `<button class="tbtn" style="margin-top:6px;height:32px" data-act="${esc(id)}">See actual size</button>` : ''}</div>`;
   $('info').hidden = false; $('hint').hidden = true;
   viewer.flashPart(id);
 }

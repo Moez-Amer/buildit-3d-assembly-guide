@@ -1,21 +1,14 @@
 // Geometry and count checks for a normalized guide. Shared by server (repair pass) and client (warnings).
 // Each issue: { level: 'error'|'warn'|'info', code, step: 1-based step or null, msg, refs: [keys] }.
 // error = the 3D model is certainly inconsistent; warn = probably wrong; info = worth a look.
-import { PANEL } from './guide.js';
+import { PANEL, rotate, shapeBoxes } from './guide.js';
+import { solidOf, contact } from './collide.js';
 
 const TOUCH = 3;      // mm: boards closer than this count as touching
 const OVERLAP = 1.5;  // mm: boards that sink into each other deeper than this overlap
+const SINK = 3;       // mm: the same for shaped or tilted parts (their surfaces are sampled, so allow a little more)
 const AX = { '+x': [0, 1], '-x': [0, -1], '+y': [1, 1], '-y': [1, -1], '+z': [2, 1], '-z': [2, -1] };
 
-// Three.js Euler order XYZ: v' = Rx * Ry * Rz * v
-function rotate(v, rotDeg) {
-  let [x, y, z] = v;
-  const [a, b, c] = rotDeg.map(d => (d * Math.PI) / 180);
-  [x, y] = [x * Math.cos(c) - y * Math.sin(c), x * Math.sin(c) + y * Math.cos(c)];
-  [x, z] = [x * Math.cos(b) + z * Math.sin(b), -x * Math.sin(b) + z * Math.cos(b)];
-  [y, z] = [y * Math.cos(a) - z * Math.sin(a), y * Math.sin(a) + z * Math.cos(a)];
-  return [x, y, z];
-}
 const add = (a, b) => a.map((v, i) => v + b[i]);
 const sub = (a, b) => a.map((v, i) => v - b[i]);
 const scale = (a, s) => a.map(v => v * s);
@@ -38,10 +31,19 @@ export function checkGuide(g) {
     for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) corners.push(toWorld([sx * size[0] / 2, sy * size[1] / 2, sz * size[2] / 2]));
     const min = [0, 1, 2].map(i => Math.min(...corners.map(c => c[i])));
     const max = [0, 1, 2].map(i => Math.max(...corners.map(c => c[i])));
-    return { p, size, toWorld, min, max, exact: isRightAngles(p.rot), dirWorld: d => rotate(unit(d), p.rot) };
+    // shaped parts: one world box per primitive (a little loose when turned, good enough for contact checks)
+    const shape = P[p.part].shape, local = shape ? shapeBoxes(shape) : null;
+    const boxes = local ? local.map(lb => {
+      const c = [];
+      for (const x of [lb.min[0], lb.max[0]]) for (const y of [lb.min[1], lb.max[1]]) for (const z of [lb.min[2], lb.max[2]]) c.push(toWorld([x, y, z]));
+      return { min: [0, 1, 2].map(i => Math.min(...c.map(q => q[i]))), max: [0, 1, 2].map(i => Math.max(...c.map(q => q[i]))) };
+    }) : [{ min, max }];
+    return { p, size, toWorld, min, max, boxes, local, shaped: !!shape, exact: !shape && isRightAngles(p.rot), dirWorld: d => rotate(unit(d), p.rot) };
   });
   const byKey = Object.fromEntries(boards.map(b => [b.p.key, b]));
-  const inside = (b, pt, tol = 0.5) => b.exact && [0, 1, 2].every(i => pt[i] > b.min[i] - tol && pt[i] < b.max[i] + tol);
+  const inBox = (bx, pt, tol) => [0, 1, 2].every(i => pt[i] > bx.min[i] - tol && pt[i] < bx.max[i] + tol);
+  const inside = (b, pt, tol = 0.5) => (b.shaped ? b.boxes.some(bx => inBox(bx, pt, tol)) : b.exact && inBox(b, pt, tol));
+  const gap = (a, b) => Math.max(...[0, 1, 2].map(k => Math.max(a.min[k], b.min[k]) - Math.min(a.max[k], b.max[k])));
   const boardAt = (pt, skip, tol) => boards.find(b => b !== skip && inside(b, pt, tol));
 
   // ---- inventory: boards
@@ -49,29 +51,49 @@ export function checkGuide(g) {
     if (part.kind !== PANEL) continue;
     const n = g.panels.filter(p => p.part === id).length;
     if (n !== part.qty) say('error', 'board-count', null, `${nm(id)}: the parts list says ${part.qty}, but the 3D model has ${n}.`, [id]);
+    if (part.shape) continue;
     if (!part.size_mm) say('warn', 'board-size', null, `${nm(id)} has no size. It is drawn as a small cube.`, [id]);
     else {
       const t = Math.min(...part.size_mm);
-      if (t < 2 || t > 60) say('warn', 'board-thickness', null, `${nm(id)} is ${r1(t)} mm thick. Boards are usually 3 to 40 mm.`, [id]);
+      if (t < 2 || t > 60) say('warn', 'board-thickness', null, `${nm(id)} is ${r1(t)} mm thick. Boards are usually 3 to 40 mm; if it is not a flat board (a cushion, base, wheel, cylinder or frame), give it a "shape".`, [id]);
     }
   }
 
   // ---- boards: overlaps, contact, floor
   if (boards.length) {
-    const floor = Math.min(...boards.map(b => b.min[1]));
+    const floor = Math.min(...boards.flatMap(b => b.boxes.map(x => x.min[1])));
     if (Math.abs(floor) > TOUCH) say('warn', 'floor', null, `The lowest board is ${r1(floor)} mm ${floor > 0 ? 'above' : 'below'} the floor.`);
   }
+  // shaped or tilted parts: test their real surfaces (collide.js), once per pair
+  const solid = b => (b.solid ||= solidOf(b.p, P[b.p.part]));
+  const contacts = new Map();
+  const contactOf = (a, b) => {
+    const k = a.p.key < b.p.key ? `${a.p.key}|${b.p.key}` : `${b.p.key}|${a.p.key}`;
+    if (!contacts.has(k)) contacts.set(k, gap(a, b) < TOUCH + 1 ? contact(solid(a), solid(b), TOUCH) : null);
+    return contacts.get(k);
+  };
+  const joined = (a, b) => (a.p.into || []).includes(b.p.key) || (b.p.into || []).includes(a.p.key);
+  const where = pt => `near [${pt.map(r1).join(', ')}] mm`;
   for (let i = 0; i < boards.length; i++) {
     const a = boards[i];
-    if (!a.exact) say('info', 'board-angle', a.p.step, `Board ${a.p.key} is turned at an angle, so its fit is not checked.`, [a.p.key]);
     let touches = a.min[1] <= TOUCH;
     for (let j = 0; j < boards.length; j++) {
       if (i === j) continue;
       const b = boards[j];
       const depth = [0, 1, 2].map(k => Math.min(a.max[k], b.max[k]) - Math.max(a.min[k], b.min[k]));
-      if (j > i && a.exact && b.exact && depth.every(d => d > OVERLAP))
-        say('error', 'overlap', Math.max(a.p.step, b.p.step), `Boards ${a.p.key} and ${b.p.key} pass through each other by ${r1(Math.min(...depth))} mm.`, [a.p.key, b.p.key]);
-      if (depth.every(d => d > -TOUCH) && depth.filter(d => d > TOUCH).length >= 2) touches = true;
+      if (a.exact && b.exact) {
+        if (j > i && !joined(a, b) && depth.every(d => d > OVERLAP))
+          say('error', 'overlap', Math.max(a.p.step, b.p.step), `Boards ${a.p.key} and ${b.p.key} pass through each other by ${r1(Math.min(...depth))} mm.`, [a.p.key, b.p.key]);
+        if (depth.every(d => d > -TOUCH) && depth.filter(d => d > TOUCH).length >= 2) touches = true;
+        continue;
+      }
+      const c = contactOf(a, b);
+      if (!c) continue;
+      if (c.gap < TOUCH || c.depth > 0 || c.cross) touches = true;
+      if (j > i && !joined(a, b) && (c.cross || c.depth > SINK)) {
+        const how = c.cross ? 'go through each other' : `pass through each other by ${r1(c.depth)} mm`;
+        say('error', 'overlap', Math.max(a.p.step, b.p.step), `Parts ${a.p.key} and ${b.p.key} ${how}${c.at ? ' ' + where(c.at) : ''}.`, [a.p.key, b.p.key]);
+      }
     }
     if (!touches) say('warn', 'floating', a.p.step, `Board ${a.p.key} (${P[a.p.part].name}) does not touch any other board or the floor.`, [a.p.key]);
   }
@@ -99,6 +121,24 @@ export function checkGuide(g) {
     const label = `${P[h.part].name} on board ${h.panel}`;
     if (h.turn_step != null && h.turn_step < h.step) say('error', 'turn-order', h.turn_step, `A ${label} is turned before it goes in.`, [h.key]);
     if (kind === 'cam_lock' && h.turn_step == null) say('warn', 'turn-missing', h.step, `A ${label} is never turned.`, [h.key]);
+    const stacks = kind === 'washer' || kind === 'nut' || kind === 'other'; // these sit on another fixing by design (cover caps too)
+
+    if (b.shaped) {
+      // on a shaped part: the point must be on (or very near) one of its pieces
+      const miss = Math.min(...b.local.map(lb => Math.max(0, ...[0, 1, 2].map(i => Math.max(lb.min[i] - h.at[i], h.at[i] - lb.max[i])))));
+      if (miss > 3) { say('error', 'hw-off-board', h.step, `A ${label} is ${r1(miss)} mm away from the part.`, [h.key]); continue; }
+      const world = b.toWorld(h.at), d = b.dirWorld(h.dir);
+      if (!stacks && seen.some(o => o.panel === h.panel && !o.stacks && Math.hypot(...sub(o.world, world)) < 4)) say('error', 'hw-double', h.step, `Two pieces of hardware sit in the same spot on part ${h.panel}.`, [h.key]);
+      seen.push({ panel: h.panel, world, stacks });
+      if (['screw', 'bolt', 'allen_bolt', 'nail', 'dowel', 'cam_screw'].includes(kind)) {
+        // it should reach another part: forwards for pegs, backwards (through this part) for screws and bolts
+        const sign = kind === 'dowel' || kind === 'cam_screw' ? 1 : -1;
+        let hit = null;
+        for (let t = 2; t <= 90 && !hit; t += 2) hit = boardAt(add(world, scale(d, sign * t)), b);
+        if (!hit) say('warn', 'hw-no-partner', h.step, `A ${label} does not reach another part.`, [h.key]);
+      }
+      continue;
+    }
 
     // on the board: the face named by dir, inside its outline
     if (Math.abs(h.at[ax] - s * half[ax]) > 2) say('warn', 'hw-face', h.step, `A ${label} is ${r1(Math.abs(h.at[ax] - s * half[ax]))} mm away from the ${h.dir} face it is said to go into.`, [h.key]);
@@ -107,8 +147,8 @@ export function checkGuide(g) {
 
     const at = h.at.slice(); at[ax] = s * half[ax];
     const world = b.toWorld(at), d = b.dirWorld(h.dir);
-    if (seen.some(o => o.panel === h.panel && Math.hypot(...sub(o.world, world)) < 4)) say('error', 'hw-double', h.step, `Two pieces of hardware sit in the same spot on board ${h.panel}.`, [h.key]);
-    seen.push({ panel: h.panel, world });
+    if (!stacks && seen.some(o => o.panel === h.panel && !o.stacks && Math.hypot(...sub(o.world, world)) < 4)) say('error', 'hw-double', h.step, `Two pieces of hardware sit in the same spot on board ${h.panel}.`, [h.key]);
+    seen.push({ panel: h.panel, world, stacks });
     if (!b.exact) continue;
 
     // does it reach the board it is meant to join?
@@ -127,9 +167,10 @@ export function checkGuide(g) {
         if (lock) usedLocks.add(lock.key);
         else if (camLocks.length) say('warn', 'cam-unpaired', h.step, `A ${label} has no cam lock in board ${into.p.key} to grab it.`, [h.key]);
       }
-    } else if (kind === 'nail' || kind === 'screw') {
+    } else if (kind === 'nail' || kind === 'screw' || kind === 'bolt' || kind === 'allen_bolt') {
       const through = b.size[ax] + 5; // passes through this board into the next
-      if (!boardAt(add(world, scale(d, -through)), b)) say('warn', 'hw-no-partner', h.step, `A ${label} does not go into another board behind it.`, [h.key]);
+      const hits = kind === 'nail' || kind === 'screw' ? [through] : Array.from({ length: 30 }, (_, i) => through + i * 2);
+      if (!hits.some(t => boardAt(add(world, scale(d, -t)), b))) say('warn', 'hw-no-partner', h.step, `A ${label} does not go into another board behind it.`, [h.key]);
     } else if (kind === 'shelf_pin') {
       const tip = add(world, scale(d, 6));
       if (boardAt(tip, b, -0.5)) say('warn', 'pin-blocked', h.step, `A ${label} points into another board.`, [h.key]);

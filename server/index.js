@@ -4,10 +4,12 @@ import express from 'express';
 import multer from 'multer';
 import Anthropic from '@anthropic-ai/sdk';
 import { mkdir, readFile, writeFile, readdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ANALYZE_PROMPT, ASK_PROMPT, REPAIR_PROMPT } from './prompt.js';
+import { ANALYZE_PROMPT, ASK_PROMPT, REPAIR_PROMPT, COMPARE_INTRO, COMPARE_PROMPT } from './prompt.js';
+import { renderGuide } from './render.js';
 import { normalizeGuide } from '../web/src/guide.js';
 import { checkGuide, countIssues, issueLine } from '../web/src/check.js';
 
@@ -17,6 +19,7 @@ const PORT = Number(process.env.PORT || 8787);
 const MODEL = process.env.CLAUDE_MODEL || 'claude-opus-5-5';
 const ASK_MODEL = process.env.CLAUDE_ASK_MODEL || 'claude-haiku-5-5';
 const REPAIR = process.env.CHECK_REPAIR !== '0'; // second pass that fixes problems the automatic check finds
+const COMPARE = process.env.RENDER_COMPARE !== '0'; // third pass: Claude compares pictures of the 3D model with the manual
 await mkdir(DATA, { recursive: true });
 
 const app = express();
@@ -101,8 +104,36 @@ app.post('/api/analyze', takePages, async (req, res) => {
       } catch (e) { if (aborted) return; console.warn('repair pass failed:', e.message); }
     }
 
+    // pass 3: render the 3D model and let Claude compare it with the drawings; keep the fix only if the check is not worse
+    let compared = null;
+    if (COMPARE) {
+      send({ type: 'progress', steps: guide.steps.length, phase: 'comparing' });
+      try {
+        const views = await renderGuide(guide, renderBase());
+        if (aborted) return;
+        const label = v => v.step === 0 ? '3D model: all parts laid out on the floor (parts check).'
+          : `3D model at the end of step ${v.step} ("${guide.steps[v.step - 1].title}"${guide.steps[v.step - 1].page != null ? `, manual page ${guide.steps[v.step - 1].page}` : ''}).`;
+        const cmpRaw = await ask([...first, { role: 'assistant', content: JSON.stringify(guide) }, { role: 'user', content: [
+          { type: 'text', text: COMPARE_INTRO },
+          ...views.flatMap(v => [{ type: 'text', text: label(v) }, { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: v.data } }]),
+          { type: 'text', text: COMPARE_PROMPT }] }]);
+        if (aborted) return;
+        compared = { views: views.length, changed: false };
+        const cmpJson = /^\s*NO_CHANGES\s*$/.test(cmpRaw) ? null : parseJson(cmpRaw);
+        if (cmpJson) {
+          const g3 = normalizeGuide(cmpJson), c3 = checkGuide(g3), now = countIssues(checks), after = countIssues(c3);
+          console.log(`compare: ${after.error} errors, ${after.warn} warnings`);
+          // warnings may move (a box becomes a real shape and is checked more closely); errors must not grow
+          if (g3.steps.length !== guide.steps.length) compared.dropped = 'different number of steps';
+          else if (after.error > now.error) compared.dropped = `more errors (${now.error} → ${after.error})`;
+          else { guide = g3; checks = c3; compared.changed = true; }
+          if (compared.dropped) console.log('compare: fix dropped,', compared.dropped);
+        } else { compared.reply = /NO_CHANGES/.test(cmpRaw) ? 'no changes' : 'not valid JSON'; console.log('compare:', compared.reply); }
+      } catch (e) { if (aborted) return; console.warn('compare pass skipped:', e.message); }
+    }
+
     guide.id = randomUUID().slice(0, 8);
-    const stored = { ...guide, created: new Date().toISOString(), pages: files.length, model: MODEL, check: { ...countIssues(checks), repaired } };
+    const stored = { ...guide, created: new Date().toISOString(), pages: files.length, model: MODEL, check: { ...countIssues(checks), repaired, compared } };
     await writeFile(path.join(DATA, `${guide.id}.json`), JSON.stringify(stored, null, 1));
     send({ type: 'done', guide: stored });
   } catch (e) {
@@ -138,6 +169,8 @@ app.get('/api/guides/:id', async (req, res) => {
 
 // production: serve the built web app
 const dist = path.join(here, '..', 'dist');
+// where the compare pass loads web/render.html: this server once the app is built, else the Vite dev server
+const renderBase = () => process.env.RENDER_URL || (existsSync(path.join(dist, 'render.html')) ? `http://localhost:${PORT}` : 'https://localhost:5173');
 app.use(express.static(dist));
 app.get(/^\/(?!api\/).*/, (_req, res, next) => res.sendFile(path.join(dist, 'index.html'), err => err && next()));
 

@@ -48,7 +48,9 @@ scripts/check-guide.mjs  checks a guide file: node scripts/check-guide.mjs <guid
 
 Everything the 3D view shows comes from one JSON file (see `web/src/guide.js` for the full spec):
 
-- `parts`: every part type with its label from the manual (`A`, `101`), count, kind and board size
+- `parts`: every part type with its label from the manual (`A`, `101`), count, kind and board size.
+  Parts that are not flat boards (chair frames, legs, seats, round parts) get a `shape` made of tubes, rods,
+  rounded blocks, outlined plates and spheres. Screws, bolts and washers can carry their real length and diameter.
 - `panels`: each physical board and where it sits in the finished piece (mm, x right, y up, z back→front)
 - `hardware`: each dowel, screw, cam lock or nail: which board it goes into, where, which way the hole faces, and in which step
 - `holes`: extra pre-drilled holes that help tell boards apart

@@ -149,13 +149,15 @@ $('analyze').onclick = async () => {
       let nl; while ((nl = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1); if (!line) continue;
         const msg = JSON.parse(line);
-        if (msg.type === 'progress') setStatus(msg.phase === 'checking' ? 'Checking the 3D layout and fixing what does not fit…' : msg.steps ? `Writing your guide… ${msg.steps} step${msg.steps > 1 ? 's' : ''} so far` : 'Reading the drawings…', 'busy');
+        if (msg.type === 'progress') setStatus(msg.phase === 'checking' ? 'Checking the 3D layout and fixing what does not fit…' : msg.phase === 'comparing' ? 'Comparing the 3D model with the drawings…' : msg.steps ? `Writing your guide… ${msg.steps} step${msg.steps > 1 ? 's' : ''} so far` : 'Reading the drawings…', 'busy');
         if (msg.type === 'error') throw Object.assign(new Error(msg.error), { code: msg.code, detail: msg.detail });
         if (msg.type === 'done') done = msg;
       }
     }
     if (!done) throw new Error('The server stopped before the guide was finished.');
     setStatus(`Done: ${done.guide.steps.length} steps.`);
+    // start the next scan empty, so old pages are never sent with a different manual
+    pages.forEach(p => p.url && URL.revokeObjectURL(p.url)); pages = [];
     onGuide?.(done.guide);
   } catch (e) {
     if (e.code === 'pdf_rejected') rejected = e.detail || 'unknown reason';
