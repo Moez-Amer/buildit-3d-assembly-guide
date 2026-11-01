@@ -1,4 +1,4 @@
-// Buildwise API server: sends manual pages to Claude and stores the guides it returns.
+// Buildit API server: sends manual pages to Claude and stores the guides it returns.
 import 'dotenv/config';
 import express from 'express';
 import multer from 'multer';
@@ -193,4 +193,4 @@ function friendly(e) {
   return e?.message || 'Something went wrong.';
 }
 
-app.listen(PORT, () => console.log(`Buildwise API on http://localhost:${PORT}  (AI: ${client ? MODEL : 'off, no API key'})`));
+app.listen(PORT, () => console.log(`Buildit API on http://localhost:${PORT}  (AI: ${client ? MODEL : 'off, no API key'})`));

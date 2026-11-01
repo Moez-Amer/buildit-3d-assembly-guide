@@ -1,4 +1,4 @@
-// The instruction that turns manual photos into a Buildwise guide.
+// The instruction that turns manual photos into a Buildit guide.
 export const ANALYZE_PROMPT = `These are the pages of the assembly manual for one product: photos, video frames, a PDF, or a mix. Photos may be out of order, blurry, cropped or repeated. A PDF is the cleanest source: prefer it when the same page appears in both.
 
 Your job: turn the manual into a 3D assembly guide in the JSON format below. Accuracy matters more than completeness. A wrong instruction is worse than a missing one.

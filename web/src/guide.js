@@ -1,4 +1,4 @@
-// The Buildwise guide format, shared by the AI server and the 3D viewer.
+// The Buildit guide format, shared by the AI server and the 3D viewer.
 //
 // Units are millimetres. World axes: x = left→right, y = up from the floor, z = back (0) → front.
 //   parts:    { "<id>": { name, qty, kind, size_mm?, look?, finish?, material?, color?, shape?, len_mm?, d_mm? } }

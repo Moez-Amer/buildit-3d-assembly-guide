@@ -1,4 +1,4 @@
-# Buildwise
+# Buildit
 
 Scan a flat-pack furniture manual with your phone (or upload photos, a video or a PDF) and get a step-by-step 3D assembly guide:
 real-looking boards with their hole patterns, hardware that animates into place, a parts bench

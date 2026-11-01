@@ -1,4 +1,4 @@
-/* Buildwise — workbench look. Marker yellow is reserved for "what's new in this step". */
+/* Buildit — workbench look. Marker yellow is reserved for "what's new in this step". */
 :root {
   --bg: #EDEFEA; --surface: #FFFFFF; --sunk: #E1E4DE; --fg: #15181C; --muted: #5B626A; --line: #C8CDC5;
   --accent: #FFB300; --accent-ink: #2A1E00; --wood: #D6B98E; --edge: #2A2520;

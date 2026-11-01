@@ -146,7 +146,7 @@ $('ask-form').addEventListener('submit', async e => {
       previous: guide.steps[cur - 2]?.text || null, next: guide.steps[cur]?.text || null }) });
     const j = await r.json();
     out.textContent = r.ok ? j.answer : j.error || 'Could not get an answer.';
-  } catch (err) { out.textContent = 'Could not reach the Buildwise server. Is it running?'; }
+  } catch (err) { out.textContent = 'Could not reach the Buildit server. Is it running?'; }
   finally { $('ask-btn').disabled = false; }
 });
 

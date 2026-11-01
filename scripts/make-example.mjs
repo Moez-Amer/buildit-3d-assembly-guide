@@ -1,4 +1,4 @@
-// Generates web/public/examples/bookcase.json in the Buildwise guide format.
+// Generates web/public/examples/bookcase.json in the Buildit guide format.
 // Run: node scripts/make-example.mjs
 // Coordinates: millimetres. x = left→right, y = up from floor, z = back(0)→front.
 // Panel "pos" is the box centre. Hardware "at" is a point on the parent panel's surface, in that panel's own coordinates.
