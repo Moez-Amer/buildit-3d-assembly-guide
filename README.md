@@ -6,7 +6,7 @@ to match real parts against, and an actual-size view for screws.
 
 ## Run it
 
-You need Node.js 20 or newer.
+You need Node.js 22.13 or newer.
 
 ```bash
 npm install
@@ -69,7 +69,43 @@ from a manufacturer's CAD data.
 | `CLAUDE_ASK_MODEL` | `claude-haiku-5-5` | Model for "Stuck on this step?" |
 | `CHECK_REPAIR` | `1` | Second pass that fixes problems the automatic 3D check finds (`0` = off) |
 | `PORT` | `8787` | API server port |
+| `SUPABASE_URL` | | Supabase project URL |
+| `SUPABASE_SECRET_KEY` | | Backend-only Supabase secret API key; never commit it |
 
 ## Production
 
 `npm run build` then `npm start` serves the built app and the API together on `PORT`.
+
+## Supabase guide storage
+
+Processed assembly guides can be stored in Supabase.
+Each row contains the complete guide JSON and metadata for browsing:
+product name, step count, creation date, owner and visibility.
+
+### Setup
+
+1. Install dependencies with `npm install`.
+2. Add `SUPABASE_URL` and `SUPABASE_SECRET_KEY` to your local `.env`.
+   See `.env.example` for placeholders.
+3. For a new database, run the SQL in
+   `supabase/migrations/20261119000100_create_processed_guides.sql`
+   using the Supabase SQL Editor.
+
+The secret key is used only by the backend and must remain outside Git.
+
+### Verify the connection
+
+Run:
+
+    node scripts/test-supabase.mjs
+
+This saves the included bookcase example, retrieves it, and compares
+the complete JSON structure. Repeating the command updates the same row.
+
+### Current integration status
+
+The storage functions can save and retrieve guides independently.
+The application still uses its existing local guide storage until
+the scan, retrieval and deletion routes are connected to Supabase.
+
+Accounts and sessions currently remain in SQLite.
