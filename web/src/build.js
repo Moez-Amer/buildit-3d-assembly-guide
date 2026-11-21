@@ -138,8 +138,66 @@ function donePanel() {
     <p class="instr">Before you use it:</p>
     <ul class="done-list"><li>Check that every screw and lock is tight.</li><li>Make sure it stands level and does not wobble.</li>${wall ? `<li>Fix it to the wall, as in step ${wall}, before you put anything on it.</li>` : ''}</ul>
     <p class="muted" style="margin:0">A small fitting left over? Makers often pack a spare. A board or a big part left over means a step was missed: go back through the steps.</p>
-    <div class="done-acts"><a class="btn" href="${home[0]}">${home[1]}</a></div>`;
+    <h3>How helpful was this guide?</h3>
+  <p class="muted">Rate your assembly experience.</p>
+
+  <div class="rating-stars" role="group" aria-label="Guide rating">
+    ${[1, 2, 3, 4, 5].map(n =>
+      `<button type="button" data-rate="${n}"
+        aria-label="${n} out of 5 stars"
+        aria-pressed="false">☆</button>`
+    ).join('')}
+  </div>
+
+  <label for="rating-comment">What could we improve? (optional)</label>
+  <textarea id="rating-comment" rows="3" maxlength="500"></textarea>
+
+  <button class="btn primary" id="save-rating" type="button" disabled>
+    Save rating
+  </button>
+  <p class="muted" id="rating-status" aria-live="polite"></p>
+</div>
+
+<div class="done-acts"><a class="btn" href="${home[0]}">${home[1]}</a></div>`;
 }
+
+// Rating UI: select 1–5 stars
+let selectedRating = 0;
+
+$('step').addEventListener('click', e => {
+  const star = e.target.closest('[data-rate]');
+  if (!star || !guide || !done) return;
+
+  selectedRating = Number(star.dataset.rate);
+
+  document.querySelectorAll('.rating-stars button').forEach(btn => {
+    const n = Number(btn.dataset.rate);
+    btn.textContent = n <= selectedRating ? '★' : '☆';
+    btn.setAttribute('aria-pressed', String(n === selectedRating));
+  });
+
+  $('save-rating').disabled = false;
+});
+
+// Save feedback locally (frontend prototype)
+$('step').addEventListener('click', e => {
+  if (e.target.id !== 'save-rating' || !guide || !done || !selectedRating) return;
+
+  const feedback = {
+    stars: selectedRating,
+    comment: $('rating-comment').value.trim(),
+    guide: guide.id || 'example',
+    date: new Date().toISOString()
+  };
+
+  try {
+    localStorage.setItem(`bi-rating-${feedback.guide}`, JSON.stringify(feedback));
+    $('rating-status').textContent = 'Rating saved on this device. Thank you!';
+    $('save-rating').textContent = 'Update rating';
+  } catch {
+    $('rating-status').textContent = 'Could not save your rating.';
+  }
+});
 
 function render() {
   const N = guide.steps.length, s = cur > 0 ? guide.steps[cur - 1] : null;
@@ -147,6 +205,35 @@ function render() {
   $('progress').innerHTML = Array.from({ length: N + 1 }, (_, i) => `<button tabindex="-1" title="${i ? `Step ${i}` : 'Parts check'}" class="${done || i < cur ? 'done' : i === cur ? 'cur' : ''}" data-i="${i}"${!done && i === cur ? ' aria-current="step"' : ''}></button>`).join('');
   const el = $('step');
   el.innerHTML = done ? donePanel() : s ? stepPanel(s) : partsCheck();
+  // Restore saved rating when opening the completion screen
+if (done) {
+  selectedRating = 0;
+  let saved = null;
+
+  try {
+    saved = JSON.parse(
+      localStorage.getItem(`bi-rating-${guide.id || 'example'}`)
+    );
+  } catch {}
+
+  if (saved && Number.isInteger(saved.stars)
+      && saved.stars >= 1 && saved.stars <= 5) {
+    selectedRating = saved.stars;
+    $('rating-comment').value =
+      typeof saved.comment === 'string' ? saved.comment : '';
+    $('rating-status').textContent =
+      'Your previous rating is saved on this device.';
+    $('save-rating').textContent = 'Update rating';
+  }
+
+  document.querySelectorAll('.rating-stars button').forEach(btn => {
+    const n = Number(btn.dataset.rate);
+    btn.textContent = n <= selectedRating ? '★' : '☆';
+    btn.setAttribute('aria-pressed', String(n === selectedRating));
+  });
+
+  $('save-rating').disabled = selectedRating === 0;
+}
   if (!RM) { el.classList.remove('swap'); void el.offsetWidth; el.classList.add('swap'); }
   $('side-body').scrollTop = 0;
   if (s && !done) showPage(hasManual(guide) ? pageNumber(s.page) : null);
