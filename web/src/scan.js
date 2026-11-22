@@ -28,6 +28,32 @@ function showScanTools(tools) {
   $('scan-tools-note').hidden = valid.length === 0;
 }
 
+function showScanDimensions(dimensions) {
+  if (!dimensions) return;
+
+  const values = [
+    dimensions.width_cm,
+    dimensions.height_cm,
+    dimensions.depth_cm,
+    dimensions.wall_m2,
+    dimensions.floor_m2
+  ];
+
+  if (!values.every(v => Number.isFinite(v) && v > 0)) return;
+
+  $('scan-dimensions-size').textContent =
+    `${dimensions.width_cm} × ${dimensions.height_cm} × ${dimensions.depth_cm} cm`;
+
+  $('scan-dimensions-wall').textContent =
+    `${dimensions.wall_m2.toFixed(2)} m²`;
+
+  $('scan-dimensions-floor').textContent =
+    `${dimensions.floor_m2.toFixed(2)} m²`;
+
+  $('scan-dimensions-pending').hidden = true;
+  $('scan-dimensions-result').hidden = false;
+}
+
 function setStatus(msg, kind) {
   const el = $('status'); el.className = 'status' + (kind === 'err' ? ' err' : '');
   el.innerHTML = (kind === 'busy' ? '<span class="spinner"></span>' : '') + `<span></span>`; el.lastChild.textContent = msg;
@@ -158,6 +184,8 @@ $('analyze').onclick = async () => {
   ctl = new AbortController(); render(); $('stop').hidden = false;
   $('scan-wait').hidden = false;
   showScanTools([]);
+  $('scan-dimensions-pending').hidden = false;
+  $('scan-dimensions-result').hidden = true;
   const n = pages.reduce((s, p) => s + (p.pdf ? p.pdf.pages || 1 : 1), 0);
   setStatus(`Reading ${n} page${n > 1 ? 's' : ''}. This usually takes 1–3 minutes.`, 'busy');
   const fd = new FormData(); pages.forEach((p, i) => fd.append('pages', p.blob, p.pdf ? p.pdf.name : `page-${i + 1}.jpg`));
@@ -175,6 +203,9 @@ $('analyze').onclick = async () => {
         const msg = JSON.parse(line);
         if (msg.type === 'progress') setStatus(msg.phase === 'checking' ? 'Checking the 3D layout and fixing what does not fit…' : msg.phase === 'comparing' ? 'Comparing the 3D model with the drawings…' : msg.phase === 'thinking' ? 'Studying the drawings…' : msg.steps ? `Writing your guide… ${msg.steps} step${msg.steps > 1 ? 's' : ''} so far` : 'Reading the drawings…', 'busy');
         if (msg.type === 'tools') showScanTools(msg.tools);
+        if (msg.type === 'dimensions') {
+          showScanDimensions(msg.dimensions);
+        }
         if (msg.type === 'error') throw Object.assign(new Error(msg.error), { code: msg.code, detail: msg.detail });
         if (msg.type === 'done') done = msg;
       }

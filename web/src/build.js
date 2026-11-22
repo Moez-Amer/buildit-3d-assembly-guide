@@ -1,5 +1,6 @@
 // The build screen: top bar with Parts · Build · Done, the 3D stage, and the step panel with its fixed next-step button.
 import { Viewer } from './viewer/Viewer.js';
+import { furnitureDimensions } from './furnitureDimensions.js';
 import { hardwareReady } from './viewer/parts3d.js';
 import { PANEL, firstUse } from './guide.js';
 import { checkGuide } from './check.js';
@@ -98,6 +99,43 @@ const partRow = (id, q, tag = 'button') => {
   return `<${tag} class="npart" data-find="${esc(id)}"${tag === 'button' ? ` aria-label="Show ${esc(id)}, ${esc(p.name)} in 3D"` : ''}>${thumbs[id] ? `<img src="${thumbs[id]}" alt="">` : '<span class="noimg"></span>'}<code>${esc(id)}</code><span class="nm"><b>${esc(p.name)}</b>${sz ? `<small>${sz}</small>` : ''}</span><span class="q">${q}×</span></${tag}>`;
 };
 
+function preparationInfo() {
+  const dimensions = furnitureDimensions(guide);
+  const tools = Array.isArray(guide.tools)
+    ? guide.tools.filter(t => typeof t === 'string' && t.trim())
+    : [];
+
+  if (!dimensions && !tools.length) return '';
+
+  let html = '<section class="prep-info">';
+
+  if (dimensions) {
+    const d = dimensions;
+    html += `
+      <h3>Furniture dimensions</h3>
+      <p><strong>Width × Height × Depth:</strong>
+        ${d.width_cm} × ${d.height_cm} × ${d.depth_cm} cm</p>
+      <p><strong>Wall projection:</strong> ${d.wall_m2.toFixed(2)} m²</p>
+      <p><strong>Floor projection:</strong> ${d.floor_m2.toFixed(2)} m²</p>
+      <p class="muted">Calculated from the generated 3D model.
+        Verify dimensions against the original manual.
+        Projections do not necessarily represent occupied floor or wall space.</p>
+    `;
+  }
+
+  if (tools.length) {
+    html += `
+      <h3>Tools you may need</h3>
+      <ul>${tools.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+      <p class="muted">AI-identified tools. Verify against the original manual.</p>
+    `;
+  }
+
+  html += '</section>';
+  return html;
+}
+
+
 function partsCheck() {
   const ids = Object.keys(guide.parts), boards = ids.filter(id => guide.parts[id].kind === PANEL), fits = ids.filter(id => guide.parts[id].kind !== PANEL);
   const count = list => list.reduce((n, id) => n + (guide.parts[id].qty || 1), 0);
@@ -105,6 +143,7 @@ function partsCheck() {
   const found = ids.filter(id => ticks.has(id)).length;
   return `<h2 class="step-title">Check the box</h2>
     <p class="instr">Unpack everything and lay it out. Tick each part as you find it. Tap a part to see it in 3D.</p>
+    ${preparationInfo()}
     <p class="conf" id="found-n">Found ${found} of ${ids.length}</p>
     ${boards.length ? `<p class="sub-h">Boards <small>${count(boards)}</small></p><div class="need">${boards.map(row).join('')}</div>` : ''}
     ${fits.length ? `<p class="sub-h">Fittings <small>${count(fits)}</small></p><div class="need">${fits.map(row).join('')}</div>` : ''}
