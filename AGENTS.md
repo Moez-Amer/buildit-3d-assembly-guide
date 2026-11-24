@@ -41,6 +41,12 @@ carry over, so it goes in `HANDOFF.md` (project root, local, gitignored).
 
 ## Team workflow
 - Lead: Moez-Amer. The lead merges pull requests and is the only one who pushes to `main` directly.
+- Everyone else never pushes to `main`. The way in:
+  1. `git switch -c task/<name>` from an up-to-date `main` (`git pull` first),
+  2. commit on that branch, then `git push -u origin task/<name>`,
+  3. open a pull request into `main` on GitHub (the template lists the checks); the lead reviews and merges it.
+  GitHub enforces this (ruleset "main: pull requests only, the lead merges"): `main` only changes through a pull request,
+  only the lead can merge or push to it, and it cannot be force-pushed or deleted.
 - One task per person or agent, on its own branch `task/<name>`, ideally in its own worktree (see "Several agents at once").
 - Each task gets a file `tasks/<name>.md` made from `tasks/_template.md`: owner, branch, goal, the files it may touch, and an
   acceptance check. Claim it with one line in `docs/STATUS.md` before starting. Never two people or agents on the same files.
