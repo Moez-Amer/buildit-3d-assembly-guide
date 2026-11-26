@@ -253,6 +253,35 @@
                 AI-identified tools. Please verify with the original manual.
               </p>
             </div>
+
+            <!-- Furniture dimensions during guide generation -->
+            <div class="scan-tools" id="scan-dimensions">
+              <h3>Furniture dimensions & space requirements</h3>
+
+              <p id="scan-dimensions-pending">
+                Checking the furniture dimensions...
+              </p>
+
+              <div id="scan-dimensions-result" hidden>
+                <p>
+                  <strong>Width × Height × Depth:</strong>
+                  <span id="scan-dimensions-size"></span>
+                </p>
+                <p>
+                  <strong>Wall projection:</strong>
+                  <span id="scan-dimensions-wall"></span>
+                </p>
+                <p>
+                  <strong>Floor projection:</strong>
+                  <span id="scan-dimensions-floor"></span>
+                </p>
+                <small>
+                  Preliminary estimates based on the generated 3D model.
+                  Verify dimensions against the original manual.
+                </small>
+              </div>
+            </div>
+
           </div>
           <div class="row">
             <button class="btn primary" id="analyze" disabled>Make my 3D guide</button>

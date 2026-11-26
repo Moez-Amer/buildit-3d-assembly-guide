@@ -16,6 +16,7 @@ import { normalizeGuide } from '../web/src/guide.js';
 import { countIssues, issueLine } from '../web/src/check.js';
 import { autoFix } from '../web/src/autofix.js';
 import { applyEdits, isEditList } from '../web/src/edits.js';
+import { furnitureDimensions } from '../web/src/furnitureDimensions.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(here, 'data', 'guides');
@@ -186,6 +187,15 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
     // Share AI-extracted tools after the first complete, validated response.
     if (guide.tools.length > 0) {
     send({ type: 'tools', tools: guide.tools });
+    }
+    const dimensions = furnitureDimensions(guide);
+
+    if (dimensions) {
+      send({
+        type: 'dimensions',
+        dimensions,
+        preliminary: true
+      });
     }
     console.log(`analyze: ${guide.steps.length} steps, check: ${before.error} errors, ${before.warn} warnings`);
     // a repair or compare reply: a list of edits (asked for), or a whole guide (accepted too)
