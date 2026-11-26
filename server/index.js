@@ -16,6 +16,8 @@ import { normalizeGuide } from '../web/src/guide.js';
 import { countIssues, issueLine } from '../web/src/check.js';
 import { autoFix } from '../web/src/autofix.js';
 import { applyEdits, isEditList } from '../web/src/edits.js';
+import {getSupabase, supabaseConfigured,} from './supabase.js';
+import { syncGuide } from './guide-sync.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(here, 'data', 'guides');
@@ -50,7 +52,15 @@ for (const level of ['log', 'warn', 'error']) {
   const print = console[level].bind(console);
   console[level] = (...args) => { print(...args); appendFile(logFile, `${new Date().toISOString()} ${args.join(' ')}\n`).catch(() => {}); };
 }
-
+// Validate client settings at startup. The connection test verifies table access.
+if (supabaseConfigured()) {
+  getSupabase();
+  console.log('Supabase guide storage enabled');
+} else {
+  console.log(
+      'Supabase guide storage off: set SUPABASE_URL and SUPABASE_SECRET_KEY to enable it'
+  );
+}
 // guides made before accounts existed belong to nobody: only admins see them
 {
   const known = knownGuideIds();
@@ -269,7 +279,22 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
     // files above are removed again (finally, below)
     try { addGuide(stored, user.id); } catch { throw Object.assign(new Error('Your account was deleted, so the guide was not kept.'), { code: 'gone' }); }
     saved = true;
-    const shown = isAdmin(user) ? stored : (({ cost, model, check, ...rest }) => rest)(stored);
+
+    try {
+      if (await syncGuide(stored)) {
+        console.log(`supabase: saved guide ${stored.id}`);
+      }
+    } catch (e) {
+      console.warn(
+          `supabase: guide ${stored.id} kept locally; ` +
+          `cloud save failed: ${e.message}`
+      );
+    }
+
+    const shown = isAdmin(user)
+        ? stored
+        : (({ cost, model, check, ...rest }) => rest)(stored);
+
     send({ type: 'done', guide: shown });
   } catch (e) {
     if (!aborted) console.error('analyze failed:', e?.status || '', e?.message, e?.status ? '' : `\n${String(e?.stack || '').split('\n').slice(1, 4).join('\n')}`);
