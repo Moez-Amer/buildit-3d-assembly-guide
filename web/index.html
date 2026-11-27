@@ -230,6 +230,18 @@
             <div class="thumbs" id="thumbs"></div>
             <div class="empty" id="thumbs-empty">No pages yet.</div>
           </div>
+          <!-- scanning with the person's own Anthropic API key: required while scanning is not open to them, else optional -->
+          <details class="own-key" id="own-key" hidden>
+            <summary id="own-key-sum">Use your own Anthropic API key</summary>
+            <label for="api-key">Anthropic API key</label>
+            <input class="field" id="api-key" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="sk-ant-…">
+            <ul class="key-facts">
+              <li>Used for this one scan, then forgotten. Never saved, never written to a log, never shown to anyone.</li>
+              <li>It goes over an encrypted connection to our server, which uses it only to send this scan to Anthropic.</li>
+              <li>Anthropic bills the scan to your account: usually $0.20–2.50 per manual.</li>
+            </ul>
+            <p class="muted"><b>Safest:</b> in the Anthropic Console, make a new key just for Buildit, set a spending limit, and delete the key after your scan. Then it is useless to anyone, us included.</p>
+          </details>
           <div class="status" id="status" aria-live="polite"></div>
           <!-- Progress and preparation tips during AI generation -->
           <div id="scan-wait" class="scan-wait" hidden>

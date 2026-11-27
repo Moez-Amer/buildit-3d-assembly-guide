@@ -27,9 +27,9 @@ export class AiError extends Error {
   constructor(message, status, where) { super(message); this.status = status; this.where = where; }
 }
 
-/* Claude: streams text, returns the whole reply. */
-function anthropic({ model, maxTokens, priceOverride }) {
-  const client = new Anthropic();
+/* Claude: streams text, returns the whole reply. apiKey: a person's own key for one scan (else ANTHROPIC_API_KEY). */
+function anthropic({ model, maxTokens, priceOverride, apiKey }) {
+  const client = new Anthropic(apiKey ? { apiKey } : undefined);
   const price = priceOf(model, priceOverride);
   return {
     name: 'Claude', model,
@@ -114,6 +114,13 @@ export function scanModel(env = process.env) {
     return openaiCompatible({ baseUrl: env.SCAN_BASE_URL, apiKey: env.SCAN_API_KEY, model: env.SCAN_MODEL, maxTokens, reasoning: env.SCAN_REASONING, priceOverride: env.SCAN_PRICE });
   }
   return env.ANTHROPIC_API_KEY ? anthropic({ model: env.CLAUDE_MODEL || 'claude-opus-5-5', maxTokens }) : null;
+}
+
+/* Claude with a person's own API key, for one scan ("bring your own key"). The key lives only in this object, which is
+   gone when the scan ends: it is never written to disk, the database or the log. */
+export const OWN_KEY = /^sk-ant-[\w-]{20,250}$/;
+export function claudeWithKey(apiKey, env = process.env) {
+  return anthropic({ model: env.CLAUDE_MODEL || 'claude-opus-5-5', maxTokens: Number(env.SCAN_MAX_TOKENS || 64000), apiKey });
 }
 
 /* The small model behind "Stuck on this step?": Claude Haiku if there is a Claude key, else the scan model. */

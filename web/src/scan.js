@@ -1,5 +1,6 @@
 // Scanning: live phone camera (needs https or localhost), photo/video upload, and sending pages to the server.
 import { api } from './api.js';
+import { currentUser } from './account.js';
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const MAX_PAGES = 60;
@@ -153,6 +154,10 @@ $('clear').onclick = () => { pages.forEach(p => p.url && URL.revokeObjectURL(p.u
 /* ---------- send to the server ---------- */
 $('analyze').onclick = async () => {
   if (!pages.length || ctl) return;
+  // the person's own Anthropic API key, if they gave one: only in this field and this request, never kept anywhere else
+  const u = currentUser(), key = $('own-key').hidden ? '' : $('api-key').value.trim();
+  if (!key && !u?.canScan) { $('own-key').open = true; $('api-key').focus(); return setStatus('Add your Anthropic API key first. Scanning with Buildit’s own AI is not open yet.', 'err'); }
+  if (key && !/^sk-ant-[\w-]{20,}$/.test(key)) { $('api-key').focus(); return setStatus('That does not look like an Anthropic API key. It starts with sk-ant-.', 'err'); }
   let rejected = null;
   stopCamera();
   ctl = new AbortController(); render(); $('stop').hidden = false;
@@ -160,11 +165,13 @@ $('analyze').onclick = async () => {
   showScanTools([]);
   const n = pages.reduce((s, p) => s + (p.pdf ? p.pdf.pages || 1 : 1), 0);
   setStatus(`Reading ${n} page${n > 1 ? 's' : ''}. This usually takes 1–3 minutes.`, 'busy');
-  const fd = new FormData(); pages.forEach((p, i) => fd.append('pages', p.blob, p.pdf ? p.pdf.name : `page-${i + 1}.jpg`));
+  const fd = new FormData();
+  if (key) fd.append('api_key', key); // in the body: URLs and headers can end up in logs on the way
+  pages.forEach((p, i) => fd.append('pages', p.blob, p.pdf ? p.pdf.name : `page-${i + 1}.jpg`));
   // pictures made from a PDF are the manual's pages in order, so the guide can show page n next to its step
   if (pages.length && pages.every(p => p.fromPdf)) fd.append('from_pdf', '1');
   try {
-    const r = await api('/api/analyze', { method: 'POST', body: fd, signal: ctl.signal });
+    const r = await api(key ? '/api/analyze?key=own' : '/api/analyze', { method: 'POST', body: fd, signal: ctl.signal });
     if (!r.body) throw new Error('The server sent no reply. Try again.');
     const reader = r.body.getReader(), dec = new TextDecoder(); let buf = '', done = null;
     for (;;) {

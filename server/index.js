@@ -21,6 +21,8 @@ import { syncGuide, mirror } from './guide-sync.js';
 import { deleteProcessedGuide } from './guide-store.js';
 import { saveRatingCloud, deleteRatingsCloud } from './rating-store.js';
 import { ratingOf, saveRating, deleteRatingsOfGuide, ratingSummary, ratingComments } from './db.js';
+import { claudeWithKey, OWN_KEY } from './ai.js';
+import { canScanOwnKey } from './auth.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(here, 'data', 'guides');
@@ -125,9 +127,18 @@ const MAX_UPLOAD = 80 * 1024 * 1024; // all pages of one scan together
 
 /* Scan → guide. Streams NDJSON lines: {type:"progress"}, then {type:"done", guide} or {type:"error"}. */
 const takePages = (req, res, next) => upload.array('pages', 60)(req, res, err => (err ? res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: friendly(err) }) : next()));
+// scans with the person's own Anthropic API key (?key=own): the key comes in the upload body (never in the URL or a header,
+// which proxies may log), is used for this scan's AI calls and dropped with them; never stored, logged or sent back
+const ownScans = limiter(20, 864e5); // own-key scans per account per day (they still use this server's disk and memory)
 app.post('/api/analyze', requireUser, (req, res, next) => {
-  if (!canScan(req.user)) return res.status(403).json({ error: 'Scanning your own manual is not open yet.', code: 'no_scan' });
-  if (!ai) return needKey(res);
+  req.ownKey = req.query.key === 'own';
+  if (req.ownKey) {
+    if (!canScanOwnKey(req.user)) return res.status(403).json({ error: 'Scanning with your own API key is switched off.', code: 'no_scan' });
+    if (!ownScans(req.user.id)) return res.status(429).json({ error: 'That is a lot of scans for one day. Try again tomorrow.' });
+  } else {
+    if (!canScan(req.user)) return res.status(403).json({ error: 'Scanning your own manual is not open yet.', code: 'no_scan' });
+    if (!ai) return needKey(res);
+  }
   const size = Number(req.headers['content-length']);
   if (!size) return res.status(411).json({ error: 'The upload had no size. Try again.' });
   if (size > MAX_UPLOAD) return res.status(413).json({ error: 'Too much at once: up to 80 MB per scan. Try fewer pages.' });
@@ -138,7 +149,12 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
 }, takePages, async (req, res) => {
   const user = req.user;
   const files = req.files || [];
-  console.log(`analyze: ${files.length} file(s), ${(files.reduce((n, f) => n + f.size, 0) / 1e6).toFixed(1)} MB → ${MODEL}`);
+  // the person's own key: taken out of the request at once, so it lives only in this scan's model object
+  const ownKey = req.ownKey ? String(req.body?.api_key ?? '').trim() : '';
+  if (req.body) delete req.body.api_key;
+  if (req.ownKey && !OWN_KEY.test(ownKey)) return res.status(400).json({ error: 'That does not look like an Anthropic API key. It starts with sk-ant-.', code: 'bad_key' });
+  const model = req.ownKey ? claudeWithKey(ownKey) : ai;
+  console.log(`analyze: ${files.length} file(s), ${(files.reduce((n, f) => n + f.size, 0) / 1e6).toFixed(1)} MB → ${model.model}${req.ownKey ? ' (own key)' : ''}`);
   if (!files.length) return res.status(400).json({ error: 'No pages were sent.' });
   res.setHeader('content-type', 'application/x-ndjson'); res.setHeader('cache-control', 'no-cache');
   const send = obj => res.write(JSON.stringify(obj) + '\n');
@@ -173,7 +189,7 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
   // every reply is kept in server/data/raw/<scan id>-<pass>.txt, so a scan that fails can be looked at without paying again
   const scanId = randomUUID().replace(/-/g, '').slice(0, 12);
   const keepRaw = (pass, text) => mkdir(RAW, { recursive: true }).then(() => writeFile(path.join(RAW, `${scanId}-${pass}.txt`), text)).catch(() => {});
-  const ask = (pass, messages, onText) => ai.ask(messages, { onText, signal: stop.signal, onThink: () => {
+  const ask = (pass, messages, onText) => model.ask(messages, { onText, signal: stop.signal, onThink: () => {
     // the model reasons before it writes: show that it is alive (at most every 5 s)
     if (Date.now() - thinking > 5000) { if (!thinking) console.log(`${pass}: model is thinking`); thinking = Date.now(); if (pass === 'read') send({ type: 'progress', steps: 0, phase: 'thinking' }); }
   }, onUsage: u => {
@@ -267,7 +283,8 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
     delete guide.example; // only the built-in example may hide the accuracy notes, never a scan (or text planted in a manual)
     const total = calls.every(c => c.usd != null) ? Math.round(calls.reduce((s, c) => s + c.usd, 0) * 10000) / 10000 : null;
     console.log(`scan cost: ${total == null ? 'incomplete (a call had no price)' : '$' + total.toFixed(4)}`);
-    const stored = { ...guide, created: new Date().toISOString(), pages: files.length, model: MODEL, check: { ...countIssues(checks), autofixed, repaired, compared }, cost: { usd: total, calls } };
+    const stored = { ...guide, created: new Date().toISOString(), pages: files.length, model: model.model, check: { ...countIssues(checks), autofixed, repaired, compared },
+      cost: { usd: total, calls, ...(req.ownKey ? { paid_by: 'own key' } : {}) } };
     // keep the manual: the PDF itself, or the page pictures when they were made from a PDF (photos are not in page order)
     try {
       const dir = path.join(PAGES, guide.id), pdf = files.find(isPdf);
@@ -290,7 +307,7 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
   } catch (e) {
     if (!aborted) console.error('analyze failed:', e?.status || '', e?.message, e?.status ? '' : `\n${String(e?.stack || '').split('\n').slice(1, 4).join('\n')}`);
     const pdfRejected = files.some(isPdf) && e?.status === 400 && /pdf|document/i.test(e?.message || '');
-    if (!aborted) send({ type: 'error', error: friendly(e), ...(pdfRejected ? { code: 'pdf_rejected', detail: apiReason(e) } : {}) });
+    if (!aborted) send({ type: 'error', error: req.ownKey ? ownKeyFriendly(e) : friendly(e), ...(pdfRejected ? { code: 'pdf_rejected', detail: apiReason(e) } : {}) });
   } finally {
     // a scan that did not end in a saved guide (stopped, failed, account gone) leaves nothing behind
     if (!saved) await removeGuide(scanId).catch(() => {});
@@ -484,6 +501,15 @@ function friendly(e) {
   if (s === 400 && /pdf|document/i.test(e?.message)) return `The AI could not open that PDF (${apiReason(e)}).`;
   if (s === 529 || s >= 500) return 'The AI is busy right now. Try again in a minute.';
   return e?.message || 'Something went wrong.';
+}
+// the same for a scan with the person's own key: the problem is with their Anthropic account, not Buildit's
+function ownKeyFriendly(e) {
+  const s = e?.status;
+  if (s === 401) return 'Anthropic did not accept your API key. Check it in the Anthropic Console, under API keys.';
+  if (s === 403) return `Your API key may not use this model (${apiReason(e)}).`;
+  if (s === 402 || /credit balance/i.test(e?.message)) return 'Your Anthropic account is out of credit. Add credit in the Anthropic Console and try again.';
+  if (s === 429) return 'Your Anthropic account reached its rate limit. Wait a minute and try again.';
+  return friendly(e);
 }
 
 app.listen(PORT, () => console.log(`Buildit API on http://localhost:${PORT}  (AI: ${ai ? MODEL : 'off, no API key'})`))
