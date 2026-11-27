@@ -229,6 +229,16 @@ Millimetres. World axes: x = left→right, y = up from the floor, z = back(0)→
   The check gives an error for a part with no name and no kind, and a warning for fixings used in steps but never placed.
 - Hardware kinds added: `allen_bolt`, `washer`, `nut`; hardware parts may have `len_mm` / `d_mm` (drawn to size, also in
   the actual-size view). A washer at the same panel/at/dir as a screw is stacked under its head.
+- Kits that go into other furniture (25 Nov 2026, first seen on a BESTÅ drawer-runner kit): a part with `in_box: false` is
+  furniture from another box the manual works on (cabinet, drawer, shelf). The viewer draws it see-through with its outline,
+  keeps it off the floor layout and out of "Check the box", the All parts drawer and the tags; at step 1 it simply stands
+  there, a later one comes in from the front at its step. A name saying "not included" / "for reference" sets the flag.
+  `fitting: true` on a panel part (runner, rail, rod drawn as a placed part) lists it with the fittings (`isBoard`, `inBox`
+  in guide.js); set automatically for such names when the shape is metal or plastic.
+  Check codes: `step-empty` (warn: nothing arrives, moves or turns in the step) and `plain-fitting` (warn: a special
+  bracket drawn with the stand-in angle model). The prompt's "EVERY STEP SHOWS SOMETHING" and "FITTINGS WITH THEIR OWN
+  FORM" sections ask for both; the repair prompt says how to fix them (add other-box parts, never move a part to a step
+  where the manual does not fit it).
 
 ## Models
 - Manual reading: `claude-opus-5-5` (env `CLAUDE_MODEL`)

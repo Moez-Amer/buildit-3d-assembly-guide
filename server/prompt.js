@@ -4,7 +4,7 @@ export const ANALYZE_PROMPT = `These are the pages of the assembly manual for on
 Your job: turn the manual into a 3D assembly guide in the JSON format below. Accuracy matters more than completeness. A wrong instruction is worse than a missing one.
 
 READING THE MANUAL
-- Follow the manual's own order. Merge repeated pages. Do not invent steps, parts or hardware that the manual does not show.
+- Follow the manual's own order. Merge repeated pages. Do not invent steps, parts or hardware that the manual does not show. (Furniture from another box that the manual shows is drawn too: see EVERY STEP SHOWS SOMETHING.)
 - Use the manual's own labels as part ids: letters or numbers for boards, the printed numbers (e.g. "101352") for hardware. If none are printed, use short ids (A, B, 1, 2).
 - Count hardware from the hardware page (usually page 2-3), not from guessing.
 - One guide step per numbered manual step. If a manual step does several things to different boards, you may split it.
@@ -33,6 +33,17 @@ World axes: x = left to right, y = up from the floor, z = back (0) to front, for
 - Hardware sizes: give "len_mm" (shaft length, without the head) and "d_mm" (thread diameter; outer diameter for a washer) when the manual prints them (e.g. "M6x40") or shows the part at actual size. Measure actual-size drawings. If two fixings differ only in length, their len_mm must differ.
 - Hardware that is not the usual colour gets "material" (and "color" if needed): a plastic push-in dowel {"kind":"dowel","material":"plastic"}, a black screw "black", a white cap "white". Without it dowels are wood and fittings are bright metal.
 - A washer under a screw or bolt head: give the washer and the screw the same "panel", "at" and "dir". The viewer stacks the head on the washer.
+
+EVERY STEP SHOWS SOMETHING
+The 3D view shows a step by moving its parts into place. A step where nothing arrives, moves into place or turns shows nothing, so plan the model so that every step has something:
+- Furniture from another box that this manual works on (the cabinet frame a drawer or runner kit goes into, the drawer, a shelf, a worktop): draw it too, and mark each of its parts "in_box": false. The viewer draws it see-through and leaves it out of the parts to unpack. Draw it complete enough to recognise: a cabinet gets both sides, bottom, top and back, with "holes" for the hole rows where the manual counts holes. Its "step" is 1 when it is standing before the manual starts, else the step where the manual puts it in (a drawer: the step that hangs it on the runners; a shelf: the step that lays it on its supports). Never list it in a step's "need". Mark it with "in_box": false, not only in its name.
+- Parts the manual joins in the hands or on the floor before fitting them (two rods pushed into a connector, a handle onto a front, a frame screwed together lying flat): give them the step where they are joined, plus a group ("groups") that holds them in front of the piece until the step that fits them.
+- A step that only adjusts, clicks or locks something already in place: if a fitting turns (an adjusting wheel, a lock), draw it as hardware with "turn_step" at that step. If nothing can show the step, say which step in "unclear".
+
+FITTINGS WITH THEIR OWN FORM
+- Only these have a ready-made model: dowel, cam_screw, cam_lock, nail, shelf_pin, screw, bolt, allen_bolt, washer, nut, knob, foot, cap, and plain wall or corner angles (kind "bracket"). Every other fitting (shelf brackets with hooks or cradles, hinges, drawer runners, rails, clips, catches, rods) needs a "shape" traced from the manual's own drawing of it (the hardware page shows it): its outline, bends, hooks and holes, at its real size. A person holding the real fitting must recognise it.
+- A screw that holds a fitting goes through a hole drawn in that fitting's shape: give the screw its "at" inside the fitting, where the drawing shows the hole.
+- Long fittings that span between boards (a synchronising rod, rails, drawer runners linked by a rod) may be panels with a "shape" so they can be placed freely: give the part "fitting": true so it is listed with the fittings, not the boards.
 
 PARTS THAT ARE NOT FLAT BOARDS (chairs, tables with metal legs, frames, cushions, round parts)
 Every solid part that is not hardware has kind "panel". A plain box (size_mm only) is right ONLY for flat rectangular boards. Every other part MUST have a "shape": cushions, seats and backrests, star bases, wheels and castors, cylinders and posts, legs, frames, mechanisms, covers, anything round or curved. Give it a "shape": a list of simple pieces in the part's own coordinates (mm, same axes as the world when rot is [0,0,0]). Then "size_mm" is worked out from the shape, and "pos" is where the point [0,0,0] of the shape sits in the finished piece. Hardware "at" on such a part is a point on the surface of one of its pieces (not snapped to a box face).
@@ -99,6 +110,8 @@ const EDITS = `Reply with ONLY a JSON object listing the changes, not the whole 
  {"part":"C","set":{"shape":[ ...pieces as described in the first message... ]}},
  {"step":4,"set":{"need":[["A",1],["101",4]]}},
  {"add":"hardware","value":{"part":"101","panel":"A1","at":[9,49,140],"dir":"+x","step":1}},
+ {"add":"part","id":"D","value":{"name":"Drawer","qty":1,"kind":"panel","in_box":false,"size_mm":[520,160,380]}},
+ {"add":"panel","value":{"key":"D1","part":"D","pos":[300,110,200],"rot":[0,0,0],"step":6}},
  {"remove":"hardware","key":"G1-S100-4"},
  {"unclear":"short note for the reader"}
 ]}
@@ -115,6 +128,8 @@ Look at the manual photos again and fix them. Rules:
 - If a problem comes from something the manual really shows (e.g. a spare part), leave it and say so in "unclear".
 - Parts that pass through each other: move or resize them so they only touch. If one really goes inside the other (a pole in a socket, a shaft in a hub, a shaft through a guard's centre), keep it and add "into": ["<other key>"] to the panel that goes in, or give the guard a "hole".
 - A screw or bolt that "points at" another part is the wrong way round: "dir" is the side its head is on, and it goes in the opposite way.
+- "Nothing changes in the 3D view in this step": add what the step really handles. Furniture from another box (the drawer, the shelf, the cabinet) is added as parts with "in_box": false and panels at that step; parts joined in the hands get their own step and a group. Never move a part to a step where the manual does not fit it; if the step only adjusts something, leave it and say so in "unclear".
+- "Drawn as a plain angle bracket": set the part's "shape" from the manual's drawing of it (hooks, cradle, bends, holes), and put its screws through the holes of that shape.
 - If you cannot tell from the photos how to fix something, leave it and add a short note with {"unclear": ...}.
 
 ${EDITS}`;

@@ -124,7 +124,8 @@ export class Viewer {
     // floor layout in front of the finished piece
     const fb = this.finalBox, rowMax = Math.max(1800, (fb.max.x - fb.min.x) * 2.4);
     let cx = fb.min.x - 250, cz = fb.max.z + 220, rowDepth = 0;
-    const order = panels.slice().sort((a, b) => a.p.step - b.p.step);
+    // furniture from another box (in_box false) is not unpacked: it has no place on the floor
+    const order = panels.filter(it => P[it.p.part].in_box !== false).sort((a, b) => a.p.step - b.p.step);
     for (const it of order) {
       // lay it flat with its busiest face up
       const counts = {}; holesOf[it.p.key].forEach(h => (counts[h.face] = (counts[h.face] || 0) + 1));
@@ -170,6 +171,12 @@ export class Viewer {
     }).filter(Boolean);
     const keyframes = it => {
       const final = { P: new THREE.Vector3(...it.p.pos), Q: it.Q };
+      if (P[it.p.part].in_box === false) {
+        // furniture from another box: hidden while unpacking; at step 1 it is simply there, a later one (the drawer,
+        // the shelf) comes in from the front at its step, so that step shows what it does
+        if (it.p.step <= 1) return [{ s: 1, ...final }];
+        return [{ s: it.p.step, P: final.P.clone().add(new THREE.Vector3(0, 60, 420)), Q: it.Q }, { s: it.p.step, ...final }];
+      }
       const mine = poses.filter(x => x.gr.panels.includes(it.p.key) && x.gr.until > it.p.step).sort((a, b) => a.gr.until - b.gr.until);
       const kfs = [{ s: 0, P: it.trayP, Q: it.trayQ }];
       let s = it.p.step;
@@ -182,7 +189,8 @@ export class Viewer {
       const part = P[it.p.part];
       const o = this.addObj({ key: it.p.key, part: it.p.part, kind: PANEL, parent: null, size: it.size,
         build: () => makeBody(part, holesOf[it.p.key], this.M),
-        kfs: keyframes(it), arc: 260 });
+        kfs: keyframes(it), arc: part.in_box === false ? 0 : 260 });
+      if (part.in_box === false) { this.seeThrough(o); continue; }
       let ghost;
       if (part.shape) {
         // see-through copy of the real shape, so a curved part shows where it is going
@@ -240,6 +248,19 @@ export class Viewer {
     this.setStep(0, true);
   }
 
+  /** Furniture from another box: drawn light and see-through with its outline, so the parts from this box stand out. */
+  seeThrough(o) {
+    const M = (this.ctxMats ||= {
+      body: new THREE.MeshStandardMaterial({ color: '#ECE7DD', roughness: 1, transparent: true, opacity: 0.42, depthWrite: false }),
+      edge: new THREE.LineBasicMaterial({ color: '#8F8778', transparent: true, opacity: 0.75 }),
+    });
+    o.context = true; o.mats = []; // never glows as new
+    o.inner.traverse(m => {
+      if (m.isMesh) { m.material = M.body; m.castShadow = false; m.receiveShadow = false; m.renderOrder = -1; }
+      else if (m.isLineSegments) m.material = M.edge;
+    });
+  }
+
   addObj(o) {
     o.group = new THREE.Group(); const built = o.build();
     o.inner = built.group || built; o.spinnable = !!built.spinnable;
@@ -274,16 +295,17 @@ export class Viewer {
 
       // labels
       const labels = [];
-      if (s === 0) this.objs.filter(o => o.kind === PANEL).forEach(o => labels.push({ o, text: o.part, big: true }));
+      if (s === 0) this.objs.filter(o => o.kind === PANEL && !o.context).forEach(o => labels.push({ o, text: o.part, big: true }));
       else {
         const seen = new Set();
         for (const o of [...moving, ...added]) {
+          if (o.context) continue; // furniture from another box: the step text names it
           if (o.kind !== PANEL && seen.has(o.part)) continue; seen.add(o.part); // every board its own tag (both B boards)
           labels.push({ o, text: o.kind === PANEL ? o.part : `${o.part} ${this.guide.parts[o.part].name.toLowerCase()}`, isNew: true });
         }
         if (turning[0]) labels.push({ o: turning[0], text: '½ turn clockwise', isNew: true });
         const hosts = new Set(added.map(o => o.parent));
-        hosts.forEach(k => { const p = this.byKey[k]; if (p && !seen.has(p.part)) { labels.push({ o: p, text: p.part }); seen.add(p.part); } });
+        hosts.forEach(k => { const p = this.byKey[k]; if (p && !p.context && !seen.has(p.part)) { labels.push({ o: p, text: p.part }); seen.add(p.part); } });
       }
       // boards this step works on (moved, or getting fittings): never hidden as loose
       const involved = new Set([...moving, ...[...added, ...turning].map(o => this.byKey[o.parent]).filter(Boolean)]);
@@ -294,7 +316,7 @@ export class Viewer {
       this.applyState(s, Infinity);
       this.root.updateMatrixWorld(true);
       const pl = this.plan[s];
-      const focus = s === 0 ? this.objs.filter(o => o.kind === PANEL) : [...pl.moving, ...pl.added, ...pl.turning];
+      const focus = s === 0 ? this.objs.filter(o => o.kind === PANEL && !o.context) : [...pl.moving, ...pl.added, ...pl.turning];
       const all = this.objs.filter(o => o.group.visible);
       const placed = all.filter(o => o.kind !== PANEL || !o.kfs[1] || o.kfs[1].s <= s); // off the floor: fitted or in its group
       const wide = this.boxOf(all.length ? all : this.objs);

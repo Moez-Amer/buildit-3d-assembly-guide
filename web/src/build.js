@@ -1,7 +1,7 @@
 // The build screen: top bar with Parts · Build · Done, the 3D stage, and the step panel with its fixed next-step button.
 import { Viewer } from './viewer/Viewer.js';
 import { hardwareReady } from './viewer/parts3d.js';
-import { PANEL, firstUse } from './guide.js';
+import { PANEL, firstUse, isBoard, inBox } from './guide.js';
 import { checkGuide } from './check.js';
 import { openActual, hasProfile } from './actualSize.js';
 import { manualPage, pageNumber, hasManual } from './manual.js';
@@ -99,7 +99,8 @@ const partRow = (id, q, tag = 'button') => {
 };
 
 function partsCheck() {
-  const ids = Object.keys(guide.parts), boards = ids.filter(id => guide.parts[id].kind === PANEL), fits = ids.filter(id => guide.parts[id].kind !== PANEL);
+  // only what comes in this box: furniture from another box (a cabinet a drawer kit goes into) is not unpacked
+  const ids = boxIds(), boards = ids.filter(id => isBoard(guide.parts[id])), fits = ids.filter(id => !isBoard(guide.parts[id]));
   const count = list => list.reduce((n, id) => n + (guide.parts[id].qty || 1), 0);
   const row = id => `<div class="prow">${partRow(id, guide.parts[id].qty || 1)}${hasProfile(guide.parts[id].kind, guide.parts[id]) ? `<button class="act" data-act="${esc(id)}">Actual size</button>` : ''}<button class="tick" role="checkbox" data-tick="${esc(id)}" aria-checked="${ticks.has(id)}" aria-label="Found ${esc(id)}, ${esc(guide.parts[id].name)}"><i>${ICON_CHECK}</i></button></div>`;
   const found = ids.filter(id => ticks.has(id)).length;
@@ -250,9 +251,11 @@ function showPage(n) {
   if (el.open) fill();
 }
 
+const boxIds = () => Object.keys(guide.parts).filter(id => inBox(guide.parts[id]));
+
 /* ---------- all parts (drawer) ---------- */
 function renderBench() {
-  $('bench').innerHTML = Object.entries(guide.parts).map(([id, p]) => `
+  $('bench').innerHTML = Object.entries(guide.parts).filter(([, p]) => inBox(p)).map(([id, p]) => `
     <div class="pc" data-pc="${esc(id)}">
       <button class="img" data-find="${esc(id)}" aria-label="Find ${esc(p.name)} in 3D">${thumbs[id] ? `<img src="${thumbs[id]}" alt="">` : ''}</button>
       <div class="top"><span class="id">${esc(id)}</span><span class="qty">${p.qty}×</span></div>
@@ -380,7 +383,7 @@ document.addEventListener('click', e => {
     on ? ticks.add(id) : ticks.delete(id);
     t.setAttribute('aria-checked', on);
     store.set('bi-ticks-' + guide.id, JSON.stringify([...ticks]));
-    const n = $('found-n'); if (n) n.textContent = `Found ${Object.keys(guide.parts).filter(x => ticks.has(x)).length} of ${Object.keys(guide.parts).length}`;
+    const n = $('found-n'); if (n) n.textContent = `Found ${boxIds().filter(x => ticks.has(x)).length} of ${boxIds().length}`;
     return;
   }
   const a = e.target.closest?.('[data-act]'), f = e.target.closest?.('[data-find]');

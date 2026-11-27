@@ -125,6 +125,9 @@ export function checkGuide(g) {
       say('warn', 'hw-unplaced', steps[0], `${nm(id)}: ${part.qty} are used in step ${steps.join(', ')}, but none are shown in the 3D model.`, [id]);
     else if (n === 0 && part.qty > 0) say('info', 'hw-unplaced', null, `${nm(id)} is not shown in the 3D model.`, [id]);
     else if (n < part.qty) say('info', 'hw-spare', null, `${nm(id)}: ${part.qty - n} of ${part.qty} are not used in the 3D model (spares?).`, [id]);
+    // brackets come in many forms (hooks, cradles, clips): the built-in angle fits wall and corner angles only
+    if (part.kind === 'bracket' && !part.shape && n > 0 && !/\b(wall|angle|corner|anti[- ]?tip|tip[- ]?over|l[- ]?shaped)\b/i.test(`${part.name} ${part.look || ''}`))
+      say('warn', 'plain-fitting', g.hardware.find(h => h.part === id).step, `${nm(id)} is drawn as a plain angle bracket. Draw its real form as a "shape" from the manual's drawing of it.`, [id]);
   }
 
   // ---- each piece of hardware
@@ -220,11 +223,17 @@ export function checkGuide(g) {
       const earlier = g.hardware.filter(h => h.part === id && h.step < n).length;
       if ((need[id] || 0) + Math.max(0, before - earlier) < c) say('warn', 'need-missing', n, `This step puts in ${c} × ${nm(id)}, but the list says to take ${need[id] || 0}.`, [id]);
     }
-    for (const p of g.panels.filter(p => p.step === n)) {
+    for (const p of g.panels.filter(p => p.step === n && P[p.part].in_box !== false)) { // other-box furniture is not taken from the box
       const taken = g.steps.slice(0, n).reduce((sum, s) => sum + (Object.fromEntries(s.need)[p.part] || 0), 0);
       const fitted = g.panels.filter(q => q.part === p.part && q.step <= n).length;
       if (taken < fitted && !g.hardware.some(h => h.panel === p.key && h.step < n)) say('info', 'need-board', n, `Board ${p.key} is fitted here but no step says to take ${nm(p.part)}.`, [p.key]);
     }
+  });
+
+  // ---- steps the 3D view cannot show: nothing new arrives, moves into place or turns
+  const shown = new Set([...g.panels.map(p => p.step), ...g.hardware.flatMap(h => [h.step, h.turn_step]), ...(g.groups || []).map(gr => gr.until), g.scene?.wall_step]);
+  g.steps.forEach((st, i) => {
+    if (!shown.has(i + 1)) say('warn', 'step-empty', i + 1, 'Nothing changes in the 3D view in this step. Follow the text and the paper manual.');
   });
 
   // merge repeats: same problem on several identical pieces becomes one line with a count

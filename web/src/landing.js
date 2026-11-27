@@ -2,7 +2,7 @@
 // Not interactive on purpose: on the landing page a drag or a pinch must scroll the page, not move the model.
 import { Viewer } from './viewer/Viewer.js';
 import { hardwareReady } from './viewer/parts3d.js';
-import { normalizeGuide } from './guide.js';
+import { normalizeGuide, isBoard, inBox } from './guide.js';
 import { profileSvg } from './actualSize.js';
 
 const $ = id => document.getElementById(id);
@@ -24,7 +24,7 @@ async function start() {
   $('hero-prog').innerHTML = guide.steps.map(() => '<i></i>').join('');
   $('hero-name').textContent = guide.product.replace(/\s*\(example\)\s*$/i, '');
   // what is in the box, as the parts list counts it (spares included)
-  const qty = board => Object.values(guide.parts).filter(p => (p.kind === 'panel') === board).reduce((n, p) => n + (p.qty || 1), 0);
+  const qty = board => Object.values(guide.parts).filter(p => inBox(p) && isBoard(p) === board).reduce((n, p) => n + (p.qty || 1), 0);
   $('hero-facts').innerHTML = [`${qty(true)} boards`, `${qty(false)} fittings`, `${guide.steps.length} steps`, guide.time_minutes && `about ${guide.time_minutes} min`].filter(Boolean).map(t => `<span>${t}</span>`).join(' · ');
   // the "What's in our 3D guide" previews use the example's own parts: their pictures, and the cam screw at true size
   try {

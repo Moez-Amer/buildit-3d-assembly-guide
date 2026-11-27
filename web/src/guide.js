@@ -1,7 +1,12 @@
 // The Buildit guide format, shared by the AI server and the 3D viewer.
 //
 // Units are millimetres. World axes: x = left→right, y = up from the floor, z = back (0) → front.
-//   parts:    { "<id>": { name, qty, kind, size_mm?, look?, finish?, material?, color?, shape?, len_mm?, d_mm? } }
+//   parts:    { "<id>": { name, qty, kind, size_mm?, look?, finish?, material?, color?, shape?, len_mm?, d_mm?, in_box?, fitting? } }
+//             in_box: false = furniture from another box that this manual works on (the cabinet a drawer kit goes
+//             into, the drawer, a shelf, a worktop): drawn see-through, never in "check the box", never "new".
+//             A name saying "not included" / "sold separately" / "for reference" sets it too (and is taken out of the name).
+//             fitting: true (panels only) = a metal or plastic fitting drawn as a placed part (runner, rail, rod, hinge),
+//             listed with the fittings, not the boards. Set automatically for such names when the shape is not wood.
 //             kind = panel (any solid part: board, frame, leg, seat) | dowel | cam_screw | cam_lock | nail | shelf_pin
 //                    | screw | bolt | allen_bolt | washer | nut | bracket | knob | foot | cap | other
 //             (an unknown kind, or "other", is read from the name: "Drawer knob" → knob, "wooden peg" → dowel)
@@ -66,6 +71,13 @@ export const MATS = ['wood', 'hardboard', 'metal', 'black', 'white', 'fabric', '
 export const SHAPES = ['box', 'cyl', 'tube', 'plate', 'sphere', 'lathe', 'shell', 'sweep', 'blades', 'grille'];
 export const KINDS = [PANEL, ...HW_KINDS];
 export const DIRS = ['+x', '-x', '+y', '-y', '+z', '-z'];
+// furniture from another box, said in the part's name instead of in_box:false
+const NOT_IN_BOX = /not\s+included|not\s+in\s+(this|the)\s+box|sold\s+separately|(shown\s+)?for\s+reference|from\s+another\s+box/i;
+const FITTING_WORDS = /runner|\brail|slide|\brod\b|hinge|bracket|\bclip|connector|\bhook|castor|caster|damper|\bcatch/i;
+/** A part that comes in the box (false for furniture from another box the manual works on). */
+export const inBox = p => p?.in_box !== false;
+/** A board, as listed in "check the box" (panels that are fittings are listed with the fittings). */
+export const isBoard = p => p?.kind === PANEL && !p.fitting && inBox(p);
 
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const vec = (v, d = [0, 0, 0]) => (Array.isArray(v) && v.length >= 3 ? v.slice(0, 3).map((x, i) => num(x, d[i])) : d.slice());
@@ -234,8 +246,11 @@ export function normalizeGuide(raw) {
     let kind = KINDS.includes(p.kind) && p.kind !== 'other' ? p.kind : null;
     if (!kind && !(sized && p.kind !== 'other')) kind = kindFromWords(p.kind, p.type, name ?? look);
     if (!kind) kind = KINDS.includes(p.kind) ? p.kind : sized ? PANEL : 'other';
+    const fullName = str(name, 'Part'), elsewhere = p.in_box === false || NOT_IN_BOX.test(fullName);
+    // "(not included, shown for reference)" said in the name: the flag carries it, the name stays the part's own
+    const ownName = fullName.replace(/\s*[(\[][^)\]]*[)\]]/g, m => (NOT_IN_BOX.test(m) ? '' : m)).replace(NOT_IN_BOX, '').replace(/[\s,;:–-]+$/, '').trim() || fullName;
     const part = parts[str(id)] = {
-      name: str(name, 'Part').slice(0, 60), qty: clampInt(p.qty, 0, 999, 1), kind,
+      name: ownName.slice(0, 60), qty: clampInt(p.qty, 0, 999, 1), kind,
       size_mm: Array.isArray(p.size_mm) && p.size_mm.length >= 3 ? p.size_mm.slice(0, 3).map(v => Math.max(1, num(v, 18))) : null,
       look: str(look), finish: p.finish ? str(p.finish) : null,
       material: mat(p.material), color: color(p.color)
@@ -250,6 +265,9 @@ export function normalizeGuide(raw) {
       part.size_mm = max.map((v, i) => Math.max(1, v - min[i]));
       if (moved) shift[str(id)] = c;
     }
+    if (elsewhere) part.in_box = false;
+    // a runner, rail or rod drawn as a placed part is still a fitting for the person unpacking: listed with the fittings
+    if (kind === PANEL && p.fitting !== false && (p.fitting === true || (FITTING_WORDS.test(ownName) && shape0 && shape0.every(q => q.mat && !['wood', 'hardboard', 'fabric'].includes(q.mat))))) part.fitting = true;
     if (kind !== PANEL) {
       part.size_mm = null;
       if (shape0) part.shape = shape0; // drawn as is, standing on the surface (see the format notes above)

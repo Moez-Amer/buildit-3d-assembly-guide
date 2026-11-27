@@ -14,7 +14,7 @@ import { normalizeGuide } from './guide.js';
 const FIELDS = {
   panel: ['part', 'pos', 'rot', 'step', 'into', 'attach'],
   hardware: ['part', 'panel', 'at', 'dir', 'step', 'turn_step', 'roll'],
-  part: ['name', 'qty', 'kind', 'size_mm', 'shape', 'look', 'finish', 'len_mm', 'd_mm', 'material', 'color'],
+  part: ['name', 'qty', 'kind', 'size_mm', 'shape', 'look', 'finish', 'len_mm', 'd_mm', 'material', 'color', 'in_box', 'fitting'],
   step: ['title', 'text', 'need', 'tip', 'warn', 'confidence', 'page'],
   group: ['panels', 'until', 'rot', 'pos'],
 };

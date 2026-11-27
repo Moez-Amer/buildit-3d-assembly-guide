@@ -12,7 +12,7 @@ import { renderGuide } from './render.js';
 import { scanModel, askModel } from './ai.js';
 import { authRoutes, currentUser, requireUser, sameSiteOnly, canScan, isAdmin, limiter, checkConfig, DEV } from './auth.js';
 import { db, addGuide, guideRow, guidesOf, knownGuideIds, deleteUser, libraryRows, setLibrary } from './db.js';
-import { normalizeGuide } from '../web/src/guide.js';
+import { normalizeGuide, isBoard, inBox } from '../web/src/guide.js';
 import { countIssues, issueLine } from '../web/src/check.js';
 import { autoFix } from '../web/src/autofix.js';
 import { applyEdits, isEditList } from '../web/src/edits.js';
@@ -367,8 +367,9 @@ async function card(id, file, extra = {}) {
   const { mtimeMs } = await stat(file);
   let c = cards.get(id);
   if (!c || c.mtimeMs !== mtimeMs) {
-    const g = JSON.parse(await readFile(file, 'utf8')), parts = Object.values(g.parts || {});
-    const count = board => parts.filter(p => (p.kind === 'panel') === board).reduce((n, p) => n + (Number(p.qty) || 1), 0);
+    // counted as the person unpacking sees them: furniture from another box left out, runners and rods are fittings
+    const g = JSON.parse(await readFile(file, 'utf8')), parts = Object.values(normalizeGuide(g).parts).filter(inBox);
+    const count = board => parts.filter(p => isBoard(p) === board).reduce((n, p) => n + (Number(p.qty) || 1), 0);
     c = { mtimeMs, product: String(g.product || '').replace(/^\s*ok\.\s*/i, ''), summary: g.summary || '', steps: g.steps?.length || 0,
       minutes: Number(g.time_minutes) || null, people: Number(g.people) || null, boards: count(true), fittings: count(false), tools: g.tools || [] };
     cards.set(id, c);
