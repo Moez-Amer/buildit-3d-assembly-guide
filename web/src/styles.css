@@ -411,3 +411,48 @@ body[data-view="build"] header.top, body[data-view="build"] .foot { display: non
     opacity: 0.5;
   }
 }
+
+/* Assembly rating */
+#step .guide-rating {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 0;
+}
+
+.guide-rating h3,
+.guide-rating p {
+  margin: 0;
+}
+
+.rating-stars {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+}
+
+.rating-stars button {
+  background: transparent;
+  border: none;
+  padding: 2px;
+  font-size: 32px;
+  line-height: 1;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.guide-rating label {
+  margin-top: 14px;
+}
+
+.guide-rating textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  padding: 10px;
+  margin-top: 6px;
+}
+
+.guide-rating #save-rating {
+  margin-top: 12px;
+}

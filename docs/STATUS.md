@@ -5,4 +5,5 @@ changes state (in progress → ready for review → merged). Format:
 
 `- <task> — <who> (<tool, optional>), branch task/<name>: <state>. <one line on where it stands>`
 
-- Store generated guides - Leon, branch task/store-generated-guides: ready for review. Connect final scan output to Supabase; existing JSON round trips verified, live-generation test pending.
+- User feedback — Lasse, branch task/user-feedback: ready for review. Local rating functionality implemented and tested; backend integration planned after the midterm.
+- Store generated guides — Leon, branch task/store-generated-guides: ready for review. Connect final scan output to Supabase; existing JSON round trips verified, live-generation test pending.
