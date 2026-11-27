@@ -118,7 +118,7 @@ async function listGuides() {
   $('guides-h').textContent = own.length ? `Your guides (${own.length})` : 'Your guides';
   const none = currentUser()?.canScan ? 'No guides yet. Scan a manual to make your first one.' : 'No guides yet. Once scanning opens, the guides you make are kept here.';
   box.innerHTML = (own.length ? own.map(item).join('') : `<p class="empty">${none}</p>`)
-    + `<p class="lbl" style="margin:10px 0 0">Example</p>` + item({ id: 'example-bookcase', product: 'Bookcase 60 × 100 cm', note: 'Example guide', steps: 9 })
+    + `<p class="lbl" style="margin:10px 0 0">Example</p>` + item({ id: 'example-bookcase', product: 'Bookcase 60 × 100 cm', note: 'Example guide', steps: 10 })
     + (old.length ? `<details class="old"><summary>Older test guides (${old.length})</summary><div class="guides">${old.map(item).join('')}</div></details>` : '')
     // admins: other people's scans, to find and fix mistakes; opening one is recorded on the server
     + (team.length ? `<details class="old"><summary>Other people's scans (${team.length})</summary><p class="muted" style="margin:8px 0">For finding and fixing mistakes. Read only; each one you open is recorded.</p><div class="guides">${team.map(item).join('')}</div></details>` : '');

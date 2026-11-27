@@ -16,6 +16,22 @@ const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const unit = dir => { const [i, s] = AX[dir]; const v = [0, 0, 0]; v[i] = s; return v; };
 const isRightAngles = rot => rot.every(d => Math.abs(d / 90 - Math.round(d / 90)) < 1e-6);
 const r1 = v => Math.round(v);
+// 2D (x, z) convex hull, counter-clockwise (monotone chain)
+function hull(pts) {
+  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]), cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = list => { const h = []; for (const q of list) { while (h.length >= 2 && cross(h[h.length - 2], h[h.length - 1], q) <= 0) h.pop(); h.push(q); } h.pop(); return h; };
+  return p.length < 3 ? p : [...half(p), ...half(p.reverse())];
+}
+// how far point q lies outside the convex polygon (0 or less = inside)
+function beyond(poly, q) {
+  if (poly.length < 3) return Math.min(...poly.map(v => Math.hypot(v[0] - q[0], v[1] - q[1])));
+  let out = -Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length], len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    out = Math.max(out, -((b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0])) / len);
+  }
+  return out;
+}
 
 export function checkGuide(g) {
   const out = [];
@@ -107,6 +123,56 @@ export function checkGuide(g) {
       }
     }
     if (!touches) say('warn', 'floating', a.p.step, `Board ${a.p.key} (${P[a.p.part].name}) does not touch any other board or the floor.`, [a.p.key]);
+  }
+
+  // ---- standing on its own while it is built: what stands in its final place after a step must not tip over.
+  // One side panel with shelves sticking out of it falls; a manual builds that lying down, which is a group here.
+  // Weight = the boards' volume, feet = where they touch the floor. Boards in a group lie on the floor in the group's
+  // pose and are left out, and so is everything from the step that fixes the piece to the wall.
+  if (boards.length) {
+    const floorY = Math.min(...boards.flatMap(b => b.boxes.map(x => x.min[1])));
+    const onFloor = x => x.min[1] - floorY <= TOUCH;
+    const inGroup = (b, n) => (g.groups || []).some(gr => gr.panels.includes(b.p.key) && b.p.step <= n && n < gr.until);
+    const otherBox = b => P[b.p.part].in_box === false; // furniture from another box is simply there
+    // shaped parts: their pieces' boxes, at a third (a tube or a leg fills little of its box)
+    const weights = b => (b.shaped
+      ? b.boxes.map(x => ({ w: 0.3 * [0, 1, 2].reduce((v, i) => v * Math.max(1, x.max[i] - x.min[i]), 1), c: [0, 1, 2].map(i => (x.min[i] + x.max[i]) / 2) }))
+      : [{ w: b.size[0] * b.size[1] * b.size[2], c: b.p.pos }]);
+    const last = g.scene?.wall_step ? g.scene.wall_step - 1 : g.steps.length;
+    // one line per stretch of steps in which the same piece (growing as boards are added) cannot stand
+    const runs = [];
+    let open = [];
+    for (let n = 1; n <= last; n++) {
+      const standing = boards.filter(b => otherBox(b) || (b.p.step <= n && !inGroup(b, n)));
+      // boards that touch hold together: one piece each
+      const up = new Map(standing.map(b => [b, b]));
+      const top = b => (up.get(b) === b ? b : top(up.get(b)));
+      for (let i = 0; i < standing.length; i++) for (let j = i + 1; j < standing.length; j++)
+        if (gap(standing[i], standing[j]) < TOUCH + 1) up.set(top(standing[i]), top(standing[j]));
+      const pieces = new Map();
+      standing.forEach(b => pieces.set(top(b), [...(pieces.get(top(b)) || []), b]));
+      const tipping = [];
+      for (const mem of pieces.values()) {
+        if (mem.length < 2 || mem.every(otherBox)) continue;
+        const feet = mem.flatMap(b => b.boxes.filter(onFloor).flatMap(x => [[x.min[0], x.min[2]], [x.max[0], x.min[2]], [x.max[0], x.max[2]], [x.min[0], x.max[2]]]));
+        if (!feet.length) continue; // resting on nothing: the floating check says so
+        const ws = mem.flatMap(weights), W = ws.reduce((s, m) => s + m.w, 0);
+        const mid = [0, 2].map(i => ws.reduce((s, m) => s + m.w * m.c[i], 0) / W);
+        const out = beyond(hull(feet), mid);
+        if (out > 10) tipping.push({ mem, out, feet: mem.filter(b => b.boxes.some(onFloor)) });
+      }
+      open = tipping.map(t => {
+        const run = open.find(r => r.mem.some(b => t.mem.includes(b)));
+        if (run) return Object.assign(run, { end: n, mem: t.mem, feet: t.feet, out: Math.max(run.out, t.out) });
+        const fresh = { start: n, end: n, ...t };
+        runs.push(fresh);
+        return fresh;
+      });
+    }
+    for (const r of runs) {
+      const keys = r.mem.map(b => b.p.key), named = keys.length > 8 ? `${keys.slice(0, 8).join(', ')} and ${keys.length - 8} more` : keys.join(', ');
+      say('warn', 'tips-over', r.start, `${r.end > r.start ? `From this step to step ${r.end}` : 'After this step'}, ${named} would fall over: the piece stands on the floor only on ${r.feet.map(b => b.p.key).join(', ')}, and ${r1(r.out)} mm of its weight hangs beyond that. A person cannot build it like this. If the manual builds it lying down (on its side, back or front), add a group for these boards with "rot" and "until" = the step where it is stood up.`, keys);
+    }
   }
 
   // ---- inventory: hardware

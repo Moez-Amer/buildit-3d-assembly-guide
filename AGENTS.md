@@ -106,7 +106,9 @@ HTTPS is required for getUserMedia (live camera) on phones.
 - `web/src/guide.js`: **the guide format + `normalizeGuide()` validation, shared by server and client**
 - `web/src/check.js`: automatic guide check, shared: board overlaps/gaps/floating, board and hardware counts vs. parts list,
   hardware off its board or on the wrong face, dowels/cam screws that point into no board, cam screw ↔ cam lock pairing,
-  nails that miss the board behind, "take these parts" lists that miss hardware used in the step.
+  nails that miss the board behind, "take these parts" lists that miss hardware used in the step, and a piece that could not
+  stand while it is built (`tips-over`, 27 Nov 2026: whatever stands in its final place after a step must have its weight over
+  the boards it stands on; groups and everything after `scene.wall_step` are left out; one line per stretch of steps).
   Shaped and tilted parts are tested on their real surfaces by `web/src/collide.js` (surface samples + signed distance per
   primitive; side test for thin grilles/domes). Overlaps that are meant (pole in socket, shaft in hub) are declared with
   panel `into: [keys]`; open grille centres with `hole`.
@@ -132,7 +134,10 @@ HTTPS is required for getUserMedia (live camera) on phones.
   the browser made them from a PDF; photos are not stored, their order is not page order). Guide field `manual`.
   The step card shows "Compare with the manual · page N" (`web/src/manual.js` renders the PDF page with pdf.js).
 - Working positions: guide `groups:[{key, panels, until, rot, pos?}]` = boards built together in another pose (lying flat, on
-  the back) from each board's step until `until`; the viewer turns the group as one and sets it on the floor.
+  the back) from each board's step until `until`; the viewer turns the group as one and sets it on the floor. Turning over or
+  standing up (group to group, group to final place) moves the group as one body about its centre, lifted clear of the floor;
+  the boards share one start time (per-step `delays` in Viewer.js). The example bookcase is built this way since 27 Nov 2026
+  (on its side, then on its front for the back board, stood up in step 8 of 10).
   Check `merged-boards` warns when a part's shape is several thin boards (a drawer drawn as one box).
 - `npm run xcheck -- <id> [from] [to]` (dev server running): manual page next to the app's 3D view for every step,
   into server/data/xcheck/<id>/. Use it after every scan: the automatic check cannot see disagreement with the paper.

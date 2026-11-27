@@ -25,7 +25,15 @@ const panels = [
   { key: 'C', part: 'C', pos: [300, 500, 130], step: 3 },
   { key: 'Bt', part: 'B', pos: [300, 991, 140], step: 3 },
   { key: 'D', part: 'D', pos: [300, 500, -1.5], step: 7 },
-  { key: 'E', part: 'E', pos: [300, 261, 130], step: 8 }
+  { key: 'E', part: 'E', pos: [300, 261, 130], step: 9 }
+];
+
+// Built the way a person can: one side alone cannot stand with boards sticking out of it, so the frame is put together
+// lying on its left side (A flat on the floor, the boards standing on their edges in it), turned onto its front for
+// the back board, and stood up at step 8.
+const groups = [
+  { key: 'frame-on-side', panels: ['AL', 'Bb', 'C', 'Bt', 'AR'], until: 7, rot: [0, 0, 90] },
+  { key: 'frame-on-front', panels: ['AL', 'Bb', 'C', 'Bt', 'AR', 'D'], until: 8, rot: [90, 0, 0] }
 ];
 
 // joints between side panels and boards, in side-panel coordinates
@@ -38,7 +46,7 @@ const holes = [];
     J.zs.forEach(z => hardware.push({ part: '102', panel: p, at: [9 * s, J.y, z], dir, step }));
     hardware.push({ part: '101', panel: p, at: [9 * s, J.y, J.dz], dir, step });
   });
-  [100, -100].forEach(z => hardware.push({ part: '105', panel: p, at: [9 * s, -250.5, z], dir, step: 8 }));
+  [100, -100].forEach(z => hardware.push({ part: '105', panel: p, at: [9 * s, -250.5, z], dir, step: 9 }));
   // shelf-pin hole rows
   for (let k = -6; k <= 20; k++) {
     const y = -250.5 + 32 * k;
@@ -55,16 +63,17 @@ const holes = [];
 // nails through the back board (back face is -z)
 [-291, 291].forEach(x => [-380, -225, -110, 110, 225, 380].forEach(y => hardware.push({ part: '104', panel: 'D', at: [x, y, -1.5], dir: '-z', step: 7 })));
 [-451, 0, 491].forEach(y => [-200, 0, 200].forEach(x => hardware.push({ part: '104', panel: 'D', at: [x, y, -1.5], dir: '-z', step: 7 })));
-hardware.push({ part: '106', panel: 'Bt', at: [0, 9, -118], dir: '+y', step: 9 });
+hardware.push({ part: '106', panel: 'Bt', at: [0, 9, -118], dir: '+y', step: 10 });
 
 const steps = [
   { title: 'Pegs and screws into one side', text: 'Lay one side panel A flat, rows of small holes facing up. Push a wooden dowel into each middle hole. Screw a cam screw into each outer hole by hand.', need: [['A', 1], ['101', 3], ['102', 6]], tip: "Stop turning when the screw's collar sits flat on the board. Too deep and the cam lock can't grab it." },
   { title: 'Cam locks into the boards', text: 'Push a cam lock into each of the 4 big round holes on B, B and C. Turn each one so its arrow points toward the nearest end.', need: [['B', 2], ['C', 1], ['103', 12]], tip: 'Arrows pointing the wrong way block the screws from sliding in.' },
-  { title: 'Join the boards to the side', text: "Stand side panel A up, holes facing in. Slide the bottom B, the middle C and the top B onto its screws and pegs. Don't tighten anything yet.", need: [], tip: 'C is the narrower board. Line it up with the back edge, so its front sits 2 cm behind the front of A.' },
+  { title: 'Join the boards to the side', text: "Leave side panel A flat on the floor, holes facing up. Push the bottom B, the middle C and the top B onto its screws and pegs, so they stand on their long edges. Don't tighten anything yet.", need: [], tip: 'C is the narrower board. Line it up with the back edge, so its front sits 2 cm behind the front of A.' },
   { title: 'Get the second side ready', text: 'Do the same as step 1 with the other side panel A: 3 dowels and 6 cam screws.', need: [['A', 1], ['101', 3], ['102', 6]] },
-  { title: 'Add the second side', text: 'Lower the second side onto the open ends of the boards, holes facing in. Press until every joint closes.', need: [], warn: 'Have a second person hold the frame steady.' },
+  { title: 'Add the second side', text: 'Lower the second side onto the open ends of the boards, holes facing down. Press until every joint closes.', need: [], warn: 'Have a second person hold the boards upright while you lower it.' },
   { title: 'Lock every joint', text: 'Turn every cam lock half a turn clockwise with a screwdriver. Each joint should pull tight.', need: [['103', 12]], tip: 'If a cam spins without tightening, its screw is too deep. Unscrew it a quarter turn.' },
-  { title: 'Nail on the back board', text: 'Put the back board on the back, white side facing in. Hammer a nail into every side and board edge, about every 15 cm.', need: [['D', 1], ['104', 21]], tip: 'Measure corner to corner both ways first. Equal lengths mean the frame is square.' },
+  { title: 'Nail on the back board', text: 'Turn the frame over so it lies on its front. Lay the back board on it, white side down, flush with the edges. Hammer a nail into every side and board edge, about every 15 cm.', need: [['D', 1], ['104', 21]], tip: 'Measure corner to corner both ways first. Equal lengths mean the frame is square.' },
+  { title: 'Stand it up', text: 'With a second person, lift the bookcase by its sides and stand it upright.', need: [], warn: 'Lift by the side panels, not the back board: its nails can pull out.' },
   { title: 'Fit the loose shelf', text: 'Push 4 shelf pins into holes at the same height on both sides. Rest the loose shelf E on top.', need: [['105', 4], ['E', 1]] },
   { title: 'Fix it to the wall', text: 'Screw the bracket to the top board, then into the wall behind it.', need: [['106', 1]], warn: "Tall furniture can tip over and injure children. Always fix it to the wall. Wall screws aren't included; pick ones that suit your wall." }
 ].map(s => ({ confidence: 'high', ...s }));
@@ -72,9 +81,9 @@ const steps = [
 const guide = {
   version: 1, id: 'example-bookcase', example: true,
   product: 'Bookcase 60 × 100 cm (example)', summary: 'A two-shelf bookcase joined with cam locks, with a nailed back board.',
-  people: 1, time_minutes: 40, tools: ['Phillips screwdriver', 'Hammer'],
-  scene: { wall_step: 9 },
-  parts, panels, holes, hardware, steps
+  people: 2, time_minutes: 40, tools: ['Phillips screwdriver', 'Hammer'],
+  scene: { wall_step: 10 },
+  parts, panels, holes, hardware, groups, steps
 };
 mkdirSync(new URL('../web/public/examples/', import.meta.url), { recursive: true });
 writeFileSync(new URL('../web/public/examples/bookcase.json', import.meta.url), JSON.stringify(guide, null, 1));

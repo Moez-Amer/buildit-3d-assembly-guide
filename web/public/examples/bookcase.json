@@ -4,14 +4,14 @@
  "example": true,
  "product": "Bookcase 60 × 100 cm (example)",
  "summary": "A two-shelf bookcase joined with cam locks, with a nailed back board.",
- "people": 1,
+ "people": 2,
  "time_minutes": 40,
  "tools": [
   "Phillips screwdriver",
   "Hammer"
  ],
  "scene": {
-  "wall_step": 9
+  "wall_step": 10
  },
  "parts": {
   "101": {
@@ -176,7 +176,7 @@
     261,
     130
    ],
-   "step": 8
+   "step": 9
   }
  ],
  "holes": [
@@ -1350,7 +1350,7 @@
     100
    ],
    "dir": "+x",
-   "step": 8
+   "step": 9
   },
   {
    "part": "105",
@@ -1361,7 +1361,7 @@
     -100
    ],
    "dir": "+x",
-   "step": 8
+   "step": 9
   },
   {
    "part": "102",
@@ -1471,7 +1471,7 @@
     100
    ],
    "dir": "-x",
-   "step": 8
+   "step": 9
   },
   {
    "part": "105",
@@ -1482,7 +1482,7 @@
     -100
    ],
    "dir": "-x",
-   "step": 8
+   "step": 9
   },
   {
    "part": "103",
@@ -1880,7 +1880,42 @@
     -118
    ],
    "dir": "+y",
-   "step": 9
+   "step": 10
+  }
+ ],
+ "groups": [
+  {
+   "key": "frame-on-side",
+   "panels": [
+    "AL",
+    "Bb",
+    "C",
+    "Bt",
+    "AR"
+   ],
+   "until": 7,
+   "rot": [
+    0,
+    0,
+    90
+   ]
+  },
+  {
+   "key": "frame-on-front",
+   "panels": [
+    "AL",
+    "Bb",
+    "C",
+    "Bt",
+    "AR",
+    "D"
+   ],
+   "until": 8,
+   "rot": [
+    90,
+    0,
+    0
+   ]
   }
  ],
  "steps": [
@@ -1927,7 +1962,7 @@
   {
    "confidence": "high",
    "title": "Join the boards to the side",
-   "text": "Stand side panel A up, holes facing in. Slide the bottom B, the middle C and the top B onto its screws and pegs. Don't tighten anything yet.",
+   "text": "Leave side panel A flat on the floor, holes facing up. Push the bottom B, the middle C and the top B onto its screws and pegs, so they stand on their long edges. Don't tighten anything yet.",
    "need": [],
    "tip": "C is the narrower board. Line it up with the back edge, so its front sits 2 cm behind the front of A."
   },
@@ -1953,9 +1988,9 @@
   {
    "confidence": "high",
    "title": "Add the second side",
-   "text": "Lower the second side onto the open ends of the boards, holes facing in. Press until every joint closes.",
+   "text": "Lower the second side onto the open ends of the boards, holes facing down. Press until every joint closes.",
    "need": [],
-   "warn": "Have a second person hold the frame steady."
+   "warn": "Have a second person hold the boards upright while you lower it."
   },
   {
    "confidence": "high",
@@ -1972,7 +2007,7 @@
   {
    "confidence": "high",
    "title": "Nail on the back board",
-   "text": "Put the back board on the back, white side facing in. Hammer a nail into every side and board edge, about every 15 cm.",
+   "text": "Turn the frame over so it lies on its front. Lay the back board on it, white side down, flush with the edges. Hammer a nail into every side and board edge, about every 15 cm.",
    "need": [
     [
      "D",
@@ -1984,6 +2019,13 @@
     ]
    ],
    "tip": "Measure corner to corner both ways first. Equal lengths mean the frame is square."
+  },
+  {
+   "confidence": "high",
+   "title": "Stand it up",
+   "text": "With a second person, lift the bookcase by its sides and stand it upright.",
+   "need": [],
+   "warn": "Lift by the side panels, not the back board: its nails can pull out."
   },
   {
    "confidence": "high",

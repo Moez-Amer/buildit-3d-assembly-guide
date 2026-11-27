@@ -7,6 +7,7 @@ import { PANEL } from '../guide.js';
 
 const PI = Math.PI;
 const DUR = 1.3;
+const _turn = new THREE.Quaternion(), _inv = new THREE.Quaternion(), _part = new THREE.Quaternion(), _mid = new THREE.Vector3(); // reused every frame
 const ease = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 // dark parts need a stronger glow, or the yellow mixes with the black into brown and the part looks brown
 const glowGain = m => { const c = m.color || new THREE.Color(1, 1, 1), l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; return 1 + 2.6 * Math.max(0, 0.6 - l); };
@@ -167,10 +168,21 @@ export class Viewer {
         const w = rb.max.x - rb.min.x; to = new THREE.Vector3(besideX + w / 2, 0, c.z); besideX += w + 250;
       }
       const shift = new THREE.Vector3(to.x - rc.x, -rb.min.y, to.z - rc.z);
-      return { gr, place: it => ({ P: new THREE.Vector3(...it.p.pos).sub(c).applyQuaternion(Rq).add(shift), Q: Rq.clone().multiply(it.Q) }) };
+      // the pose as one turn and shift of the finished piece (for turning the group over as one body)
+      const T = { R: Rq, c, shift, half: box.getSize(new THREE.Vector3()).length() / 2 };
+      return { gr, place: it => ({ P: new THREE.Vector3(...it.p.pos).sub(c).applyQuaternion(Rq).add(shift), Q: Rq.clone().multiply(it.Q), T, gk: gr.key }) };
     }).filter(Boolean);
+    // where a point of the finished piece is in a pose; the finished place itself is no turn and no shift
+    const FINAL = { R: new THREE.Quaternion(), c: new THREE.Vector3(), shift: new THREE.Vector3(), half: 0 };
+    const img = (T, X) => X.clone().sub(T.c).applyQuaternion(T.R).add(T.shift);
+    // from one group pose to the next (turned over, stood up): the group's centre travels and the whole group turns
+    // about it, lifted just enough that no corner dips through the floor on the way
+    const rigidMove = (a, b) => {
+      const XA = img(a.T, a.T.c), XB = img(b.T, a.T.c);
+      return { key: a.gk, XA, XB, lift: Math.max(0, a.T.half - Math.min(XA.y, XB.y) + 60) };
+    };
     const keyframes = it => {
-      const final = { P: new THREE.Vector3(...it.p.pos), Q: it.Q };
+      const final = { P: new THREE.Vector3(...it.p.pos), Q: it.Q, T: FINAL };
       if (P[it.p.part].in_box === false) {
         // furniture from another box: hidden while unpacking; at step 1 it is simply there, a later one (the drawer,
         // the shelf) comes in from the front at its step, so that step shows what it does
@@ -182,6 +194,7 @@ export class Viewer {
       let s = it.p.step;
       for (const x of mine) { if (x.gr.until <= s && kfs.length > 1) continue; kfs.push({ s, ...x.place(it) }); s = x.gr.until; }
       kfs.push({ s, ...final });
+      for (let i = 2; i < kfs.length; i++) if (kfs[i - 1].gk) kfs[i].rigid = rigidMove(kfs[i - 1], kfs[i]);
       return kfs;
     };
 
@@ -276,7 +289,7 @@ export class Viewer {
       [].concat(m.material).forEach(x => x.emissive && !o.mats.includes(x) && o.mats.push(x));
     });
     (o.parent ? this.byKey[o.parent].group : this.root).add(o.group);
-    this.objs.push(o); this.byKey[o.key] = o; o.delay = 0;
+    this.objs.push(o); this.byKey[o.key] = o; o.delays = {}; // seconds into each step before it starts moving
     return o;
   }
 
@@ -287,11 +300,16 @@ export class Viewer {
       const moving = this.objs.filter(o => o.kind === PANEL && s > 0 && o.kfs.some((k, i) => i > 0 && k.s === s));
       const added = this.objs.filter(o => o.kind !== PANEL && o.kfs[0].s === s);
       const turning = this.objs.filter(o => o.turnStep === s);
-      moving.forEach((o, i) => (o.delay = i * 0.3));
-      const hwStart = moving.length ? moving.length * 0.3 + 0.9 : 0, gap = Math.min(0.12, 1.6 / Math.max(1, added.length));
+      // one start time per step and object; a group that turns over moves as one, so its boards share one start
+      const unitOf = o => { const k = o.kfs.find((f, i) => i > 0 && f.s === s); return k?.rigid ? `group ${k.rigid.key}` : o.key; };
+      const units = [...new Set(moving.map(unitOf))];
+      moving.forEach(o => (o.delays[s] = units.indexOf(unitOf(o)) * 0.3));
+      const hwStart = units.length ? units.length * 0.3 + 0.9 : 0, gap = Math.min(0.12, 1.6 / Math.max(1, added.length));
       // insert hardware panel by panel so the eye can follow
-      added.slice().sort((a, b) => (a.parent > b.parent ? 1 : a.parent < b.parent ? -1 : 0)).forEach((o, i) => (o.delay = hwStart + i * gap));
-      const span = Math.max(0, ...moving.map(o => o.delay), ...added.map(o => o.delay));
+      added.slice().sort((a, b) => (a.parent > b.parent ? 1 : a.parent < b.parent ? -1 : 0)).forEach((o, i) => (o.delays[s] = hwStart + i * gap));
+      // cam locks turn one after another, in the order they went in
+      turning.forEach(o => (o.delays[s] = o.delays[o.kfs[0].s] ?? 0));
+      const span = Math.max(0, ...[...moving, ...added, ...turning].map(o => o.delays[s]));
 
       // labels
       const labels = [];
@@ -390,21 +408,30 @@ export class Viewer {
       const idx = o.kfs.indexOf(k), isNew = k.s === s && s > 0;
       // hideLoose (landing preview): boards still lying on the floor are left out once building has started
       if (this.hideLoose && s > 0 && idx === 0 && o.kind === PANEL && o.kfs.length > 1 && !this.plan?.[s]?.involved.has(o)) { o.group.visible = false; continue; }
-      if (isNew && idx === 0 && o.parent && el < o.delay) { o.group.visible = false; continue; }
+      const delay = o.delays[s] ?? 0;
+      if (isNew && idx === 0 && o.parent && el < delay) { o.group.visible = false; continue; }
       o.group.visible = true;
-      const p = !isNew || this.RM ? 1 : ease(Math.min(1, Math.max(0, (el - o.delay) / DUR)));
+      const p = !isNew || this.RM ? 1 : ease(Math.min(1, Math.max(0, (el - delay) / DUR)));
       if (isNew) {
         const prev = idx > 0 ? o.kfs[idx - 1] : null;
-        o.group.position.lerpVectors(prev ? prev.P : k.fromP || k.P, k.P, p);
-        if (prev && o.arc) o.group.position.y += Math.sin(p * PI) * o.arc;
+        if (prev && k.rigid) {
+          // turned over or stood up with its group: about the group's centre, so the boards stay joined on the way
+          _turn.copy(k.Q).multiply(_inv.copy(prev.Q).invert());
+          _part.identity().slerp(_turn, p);
+          o.group.position.copy(prev.P).sub(k.rigid.XA).applyQuaternion(_part).add(_mid.lerpVectors(k.rigid.XA, k.rigid.XB, p));
+          o.group.position.y += Math.sin(p * PI) * Math.max(o.arc, k.rigid.lift);
+        } else {
+          o.group.position.lerpVectors(prev ? prev.P : k.fromP || k.P, k.P, p);
+          if (prev && o.arc) o.group.position.y += Math.sin(p * PI) * o.arc;
+        }
         o.group.quaternion.copy(prev ? prev.Q : k.Q).slerp(k.Q, p);
         o.inner.rotation.x = o.spinnable ? (1 - p) * 6 * PI : 0;
       } else { o.group.position.copy(k.P); o.group.quaternion.copy(k.Q); o.inner.rotation.x = 0; }
       if (o.turnStep) {
-        const tp = s > o.turnStep ? 1 : s < o.turnStep ? 0 : this.RM ? 1 : ease(Math.min(1, Math.max(0, (el - o.delay) / DUR)));
+        const tp = s > o.turnStep ? 1 : s < o.turnStep ? 0 : this.RM ? 1 : ease(Math.min(1, Math.max(0, (el - delay) / DUR)));
         o.inner.rotation.x = -PI * tp;
       }
-      if (o.ghost) o.ghost.visible = s === o.kfs[o.kfs.length - 1].s && s > 0 && !this.RM && el < o.delay + DUR * 0.98;
+      if (o.ghost) o.ghost.visible = s === o.kfs[o.kfs.length - 1].s && s > 0 && !this.RM && el < delay + DUR * 0.98;
     }
     (this.turnArrows || []).forEach(t => (t.a.visible = t.s === s));
     if (this.wall) this.wall.visible = s >= this.guide.scene.wall_step;

@@ -39,7 +39,7 @@ async function start() {
   go(RM ? guide.steps.length : FIRST, true);
   sync();
 }
-// the loop starts where the piece stands up (steps 1-2 lie flat on the floor and fill the view with boards)
+// the loop starts where the frame is joined (steps 1-2 lie flat on the floor and fill the view with boards)
 const FIRST = 3;
 const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 function go(s, first) {
