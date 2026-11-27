@@ -417,7 +417,7 @@ body[data-view="build"] header.top, body[data-view="build"] .foot { display: non
   display: flex;
   flex-direction: column;
   gap: 0;
-  margin-top: 0;
+  margin-top: 10px;
 }
 
 .guide-rating h3,
@@ -451,6 +451,8 @@ body[data-view="build"] header.top, body[data-view="build"] .foot { display: non
   resize: none;
   padding: 10px;
   margin-top: 6px;
+  font: inherit;
+  font-size: 16px; /* 16px or more: phones do not zoom in when it gets focus */
 }
 
 .guide-rating #save-rating {

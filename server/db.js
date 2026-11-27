@@ -19,6 +19,18 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS guides (id TEXT PRIMARY KEY, owner TEXT REFERENCES users(id) ON DELETE SET NULL, product TEXT, steps INTEGER, created TEXT, public INTEGER NOT NULL DEFAULT 0);
   CREATE INDEX IF NOT EXISTS guides_owner ON guides(owner);
   CREATE TABLE IF NOT EXISTS notices (user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, kind TEXT NOT NULL, sent TEXT NOT NULL, PRIMARY KEY (user_id, kind));
+  -- one rating per person and guide (27 Nov 2026); saving again changes it. product and company are copied from the
+  -- guide when the rating is saved, so the list stays readable after a guide is renamed. Deleting the account deletes them.
+  CREATE TABLE IF NOT EXISTS ratings (guide_id TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5), comment TEXT NOT NULL DEFAULT '', product TEXT, company TEXT,
+    created TEXT NOT NULL, updated TEXT NOT NULL, PRIMARY KEY (guide_id, user_id));
+  CREATE INDEX IF NOT EXISTS ratings_user ON ratings(user_id);
+  -- all ratings combined, one row per guide: SELECT * FROM rating_summary
+  CREATE VIEW IF NOT EXISTS rating_summary AS
+    SELECT guide_id, MAX(product) AS product, MAX(company) AS company, COUNT(*) AS ratings, ROUND(AVG(stars), 2) AS average,
+      SUM(stars = 5) AS five, SUM(stars = 4) AS four, SUM(stars = 3) AS three, SUM(stars = 2) AS two, SUM(stars = 1) AS one,
+      SUM(comment <> '') AS comments, MAX(updated) AS last_rated
+    FROM ratings GROUP BY guide_id;
 `);
 // columns added later (24 Nov 2026): the name and article number a library guide is listed under
 const guideCols = new Set(db.prepare('PRAGMA table_info(guides)').all().map(c => c.name));
@@ -93,3 +105,20 @@ export const libraryRows = () => db.prepare('SELECT id, product, title, article 
 export function setLibrary(id, on, { title = null, article = null } = {}) {
   return db.prepare('UPDATE guides SET public = ?, title = COALESCE(?, title), article = COALESCE(?, article) WHERE id = ?').run(on ? 1 : 0, title, article, id).changes > 0;
 }
+
+/* ---------- ratings ---------- */
+export const ratingOf = (guideId, userId) =>
+  db.prepare('SELECT stars, comment, updated FROM ratings WHERE guide_id = ? AND user_id = ?').get(guideId, userId) ?? null;
+/** Saves (or changes) one person's rating of one guide. Returns the stored row. */
+export function saveRating({ guideId, userId, stars, comment, product = null, company = null }) {
+  const t = new Date().toISOString();
+  return db.prepare(`INSERT INTO ratings (guide_id, user_id, stars, comment, product, company, created, updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (guide_id, user_id) DO UPDATE SET stars = excluded.stars, comment = excluded.comment, product = excluded.product,
+      company = excluded.company, updated = excluded.updated
+    RETURNING *`).get(guideId, userId, stars, comment, product, company, t, t);
+}
+export const deleteRatingsOfGuide = guideId => db.prepare('DELETE FROM ratings WHERE guide_id = ?').run(guideId);
+export const ratingSummary = () => db.prepare('SELECT * FROM rating_summary ORDER BY ratings DESC, average DESC').all();
+/** The newest comments, with their stars and guide (who wrote them is left out). */
+export const ratingComments = (limit = 200) => db.prepare(`SELECT guide_id, product, company, stars, comment, updated FROM ratings
+  WHERE comment <> '' ORDER BY updated DESC LIMIT ?`).all(limit);

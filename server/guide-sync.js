@@ -21,3 +21,15 @@ export async function syncGuide(guide) {
 
     return true;
 }
+
+/**
+ * Runs one Supabase write in the background, when Supabase is set up. Nobody waits for it: the local database is the
+ * record, so a slow or failed cloud write is only logged, never shown to the person.
+ */
+export function mirror(label, write) {
+    if (!supabaseConfigured()) return;
+    write().then(
+        () => console.log(`supabase: ${label}`),
+        e => console.warn(`supabase: ${label} failed: ${e.message}`)
+    );
+}

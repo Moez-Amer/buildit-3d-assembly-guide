@@ -62,8 +62,13 @@ Example: a round fan base, 260 mm across, 40 mm high, with a socket: {"kind":"pa
 
 List anything you could not read in "unclear".
 
+WHOSE MANUAL, WHICH PIECE
+- "company": the company that makes or sells the piece, as printed in the manual (cover, back page, logo, small print), e.g. "IKEA", "SONGMICS". Only a name you can read; never guess it from the drawing style or the type of furniture. Not printed: null.
+- "furniture": the piece's own name and what it is, as printed, e.g. "HEMNES chest of 8 drawers", "OBG77 office chair". No product name printed: say what it is in plain words ("bookcase with 3 shelves"). Leave out the company and the article number.
+- "product" stays the short title shown to the person: the furniture name plus the article number if printed.
+
 Reply with ONLY this JSON, no other text:
-{"product":"name and article number if printed","summary":"one sentence","people":1,"time_minutes":45,"tools":["Phillips screwdriver"],
+{"product":"name and article number if printed","company":"maker as printed, or null","furniture":"its own name and what it is","summary":"one sentence","people":1,"time_minutes":45,"tools":["Phillips screwdriver"],
 "scene":{"wall_step":null},
 "parts":{"A":{"name":"Side panel","qty":2,"kind":"panel","size_mm":[18,1000,280],"look":"how to recognise it: holes, edges, size compared with others"},
          "B":{"name":"Bottom","qty":1,"kind":"panel","size_mm":[564,18,280],"look":"..."},

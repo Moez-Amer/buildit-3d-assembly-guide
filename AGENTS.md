@@ -155,6 +155,18 @@ HTTPS is required for getUserMedia (live camera) on phones.
   link token after `#`, used by POST behind a Continue button that first shows the masked email (`/api/auth/peek`); cookie `__Host-bi_session`.
   CSRF: every /api change needs header `x-buildit: 1` (web/src/api.js adds it) + Sec-Fetch-Site check + SameSite=Lax.
 - Access: guides table (owner, public). Owner or public only; guides from before accounts (owner NULL) only for ADMIN_EMAILS. Others get 404.
+  The original manual (PDF, page pictures, the guide's `manual` field): the owner only; admins only for guides with no owner
+  (27 Nov 2026: admins could open anyone's manual before). Tested with three accounts: other people, admins and signed-out
+  visitors get 404 for someone's guide, manual, rating and delete.
+- Ratings (27 Nov 2026): "How helpful was this guide?" on the Done screen. Signed in only, one per person and guide (saving
+  again changes it), for any guide the person can open plus the example. SQLite table `ratings` (account deleted → its
+  ratings go; guide deleted → its ratings go), view `rating_summary` = all ratings combined per guide. API:
+  `GET|PUT /api/guides/:id/rating` ({stars 1–5, comment ≤ 500 chars, plain text}, 30 saves per account per hour),
+  `GET /api/ratings` (admins: per-guide summary + newest comments, without who wrote them). CLI: `node scripts/ratings.mjs [--comments]`.
+- Supabase (optional, SUPABASE_URL + SUPABASE_SECRET_KEY): a copy for the team, the local SQLite stays the record. Finished guides
+  (`processed_guides`, written after the person gets the guide), ratings (`guide_ratings`, view `guide_rating_summary`),
+  deletes of guides, ratings and accounts, and the library's public flag (scripts/library.mjs) are mirrored in the background
+  (`mirror()` in server/guide-sync.js); a failed cloud write is only logged. Migrations in `supabase/migrations/`.
   Scanning: ADMIN_EMAILS only until payments (`SCAN_ACCESS=everyone` opens it); others see "early access".
   `scripts/notify-scan-open.mjs` sends the one promised "scanning is open" email.
 - Email (24 Nov 2026): `server/mail.js` sends everything: Resend when `RESEND_API_KEY` is set, else SMTP (`SMTP_URL`). Keys only
@@ -189,6 +201,8 @@ HTTPS is required for getUserMedia (live camera) on phones.
 
 ## Guide format (summary; full spec in web/src/guide.js)
 Millimetres. World axes: x = left→right, y = up from the floor, z = back(0)→front, finished piece seen from the front.
+- Top level: `product` (title shown), `company` (maker as printed, else null), `furniture` (its own name and what it is,
+  "HEMNES chest of 8 drawers"), `summary`, `people`, `time_minutes`, `tools`. company/furniture added 27 Nov 2026 (older guides: null).
 - `parts`: `{ "A": {name, qty, kind:"panel", size_mm:[x,y,z], look}, "101": {name, qty, kind:"dowel", look} }`
 - `panels`: one per physical board: `{key, part, pos:[centre], rot:[deg], step}`. `step` = when it reaches its final place.
 - `hardware`: one per physical piece: `{part, panel, at:[point on panel surface, panel coords], dir:"+x".."-z", step, turn_step?, roll?}`

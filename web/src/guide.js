@@ -70,6 +70,11 @@ export const DIRS = ['+x', '-x', '+y', '-y', '+z', '-z'];
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const vec = (v, d = [0, 0, 0]) => (Array.isArray(v) && v.length >= 3 ? v.slice(0, 3).map((x, i) => num(x, d[i])) : d.slice());
 const str = (v, d = '') => (v == null ? d : String(v));
+// a printed name, or null: no placeholder words ("unknown", "n/a", "not printed") in the guide
+const label = (v, max) => {
+  const t = typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '';
+  return !t || /^(null|none|unknown|n\/?a|-+|not\s+(printed|shown|given|stated|visible)|unbranded|no\s+(name|brand))\.?$/i.test(t) ? null : t;
+};
 const clampInt = (v, lo, hi, d) => Math.min(hi, Math.max(lo, Math.round(num(v, d))));
 const pos = (v, d, lo = 0.5, hi = 5000) => Math.min(hi, Math.max(lo, num(v, d)));
 const optNum = (v, lo, hi) => (v == null || !Number.isFinite(Number(v)) ? null : Math.min(hi, Math.max(lo, Number(v))));
@@ -297,7 +302,9 @@ export function normalizeGuide(raw) {
 
   return {
     version: 1, id: str(raw.id, ''), example: !!raw.example,
-    product: str(raw.product, 'Your furniture').slice(0, 100), summary: str(raw.summary),
+    product: str(raw.product, 'Your furniture').slice(0, 100),
+    // whose manual and which piece, as printed (null when the manual does not say): "IKEA", "HEMNES chest of 8 drawers"
+    company: label(raw.company, 60), furniture: label(raw.furniture, 100), summary: str(raw.summary),
     people: clampInt(raw.people, 1, 4, 1), time_minutes: clampInt(raw.time_minutes, 0, 600, 0),
     tools: Array.isArray(raw.tools) ? raw.tools.map(t => str(t)).slice(0, 8) : [],
     scene: { wall_step: raw.scene?.wall_step ? clampInt(raw.scene.wall_step, 1, N, N) : null },

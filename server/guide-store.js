@@ -39,6 +39,32 @@ export async function saveProcessedGuide(
     }
 }
 
+// a guide deleted here (by its owner, or with the account) is deleted in Supabase too
+export async function deleteProcessedGuide(id) {
+    const { error } = await getSupabase()
+        .from('processed_guides')
+        .delete()
+        .eq('id', id)
+        .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+
+    if (error) {
+        throw new Error(`Deleting guide failed: ${error.message}`);
+    }
+}
+
+// a guide put into or taken out of the library (scripts/library.mjs)
+export async function setProcessedGuidePublic(id, isPublic) {
+    const { error } = await getSupabase()
+        .from('processed_guides')
+        .update({ is_public: isPublic })
+        .eq('id', id)
+        .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
+
+    if (error) {
+        throw new Error(`Updating guide failed: ${error.message}`);
+    }
+}
+
 export async function getProcessedGuide(id) {
     const { data, error } = await getSupabase()
         .from('processed_guides')

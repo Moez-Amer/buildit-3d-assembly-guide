@@ -16,8 +16,11 @@ import { normalizeGuide } from '../web/src/guide.js';
 import { countIssues, issueLine } from '../web/src/check.js';
 import { autoFix } from '../web/src/autofix.js';
 import { applyEdits, isEditList } from '../web/src/edits.js';
-import {getSupabase, supabaseConfigured,} from './supabase.js';
-import { syncGuide } from './guide-sync.js';
+import { getSupabase, supabaseConfigured } from './supabase.js';
+import { syncGuide, mirror } from './guide-sync.js';
+import { deleteProcessedGuide } from './guide-store.js';
+import { saveRatingCloud, deleteRatingsCloud } from './rating-store.js';
+import { ratingOf, saveRating, deleteRatingsOfGuide, ratingSummary, ratingComments } from './db.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(here, 'data', 'guides');
@@ -106,9 +109,10 @@ const viewable = (req, res, next) => {
   if (!canView(req.user, guideRow(req.params.id))) return res.status(404).json({ error: 'Guide not found' });
   next();
 };
-// the original manual (a third party's document) stays with whoever scanned it: the owner, and admins. A library
-// guide is open to everyone; the manual it was made from is not.
-const ownsGuide = (user, row) => !!(user && row && (row.owner === user.id || isAdmin(user)));
+// the original manual (a third party's document, and what someone photographed at home) stays with whoever scanned
+// it. Admins see it only for guides that belong to nobody (from before accounts, and the library); another person's
+// manual stays theirs, admin or not. A library guide is open to everyone; the manual it was made from is not.
+const ownsGuide = (user, row) => !!(user && row && (row.owner === user.id || (!row.owner && isAdmin(user))));
 const manualViewable = (req, res, next) => {
   if (!/^[\w-]+$/.test(req.params.id)) return res.status(400).end();
   if (!ownsGuide(req.user, guideRow(req.params.id))) return res.status(404).end();
@@ -279,23 +283,10 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
     // files above are removed again (finally, below)
     try { addGuide(stored, user.id); } catch { throw Object.assign(new Error('Your account was deleted, so the guide was not kept.'), { code: 'gone' }); }
     saved = true;
-
-    try {
-      if (await syncGuide(stored)) {
-        console.log(`supabase: saved guide ${stored.id}`);
-      }
-    } catch (e) {
-      console.warn(
-          `supabase: guide ${stored.id} kept locally; ` +
-          `cloud save failed: ${e.message}`
-      );
-    }
-
-    const shown = isAdmin(user)
-        ? stored
-        : (({ cost, model, check, ...rest }) => rest)(stored);
-
+    const shown = isAdmin(user) ? stored : (({ cost, model, check, ...rest }) => rest)(stored);
     send({ type: 'done', guide: shown });
+    // the copy in Supabase after the person has their guide: a slow or failed cloud write never holds them up
+    mirror(`saved guide ${stored.id}`, () => syncGuide(stored));
   } catch (e) {
     if (!aborted) console.error('analyze failed:', e?.status || '', e?.message, e?.status ? '' : `\n${String(e?.stack || '').split('\n').slice(1, 4).join('\n')}`);
     const pdfRejected = files.some(isPdf) && e?.status === 400 && /pdf|document/i.test(e?.message || '');
@@ -382,10 +373,12 @@ app.delete('/api/guides/:id', requireUser, async (req, res) => {
   await removeGuide(row.id);
   res.json({ ok: true });
 });
-// delete the account: its guides, manuals and sessions
+// delete the account: its guides, manuals, ratings and sessions
 app.delete('/api/me', requireUser, async (req, res) => {
   for (const g of guidesOf(req.user.id)) await removeGuide(g.id);
-  deleteUser(req.user);
+  deleteUser(req.user); // its ratings go with it (ON DELETE CASCADE)
+  const who = req.user.id;
+  mirror('deleted the ratings of a deleted account', () => deleteRatingsCloud({ userId: who }));
   res.append('Set-Cookie', '__Host-bi_session=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
   console.log('account deleted');
   res.json({ ok: true });
@@ -396,7 +389,44 @@ async function removeGuide(id) {
   // the model's raw replies for this scan (server/data/raw/<id>-<pass>.txt)
   try { for (const f of await readdir(RAW)) if (f.startsWith(`${id}-`)) await rm(path.join(RAW, f), { force: true }); } catch { /* no raw folder */ }
   db.prepare('DELETE FROM guides WHERE id = ?').run(id);
+  deleteRatingsOfGuide(id);
+  // and the copies in Supabase
+  mirror(`deleted guide ${id}`, () => deleteProcessedGuide(id));
+  mirror(`deleted the ratings of guide ${id}`, () => deleteRatingsCloud({ guideId: id }));
 }
+
+/* ---------- ratings: one per person and guide, changed by saving again ---------- */
+// only for a guide the person can open (the example too), and only signed in, so each rating is one real person's
+const EXAMPLE_ID = 'example-bookcase';
+const rateable = (user, id) => id === EXAMPLE_ID || canView(user, guideRow(id));
+const rates = limiter(30, 60 * 60e3); // saves per account per hour
+const ratingRoute = (req, res, next) => {
+  if (!/^[\w-]{1,64}$/.test(req.params.id) || !rateable(req.user, req.params.id)) return res.status(404).json({ error: 'Guide not found' });
+  next();
+};
+app.get('/api/guides/:id/rating', requireUser, ratingRoute, (req, res) => {
+  res.json({ rating: ratingOf(req.params.id, req.user.id) });
+});
+app.put('/api/guides/:id/rating', requireUser, ratingRoute, async (req, res) => {
+  const { stars, comment = '' } = req.body || {};
+  if (!Number.isInteger(stars) || stars < 1 || stars > 5) return res.status(400).json({ error: 'Choose 1 to 5 stars.' });
+  if (typeof comment !== 'string') return res.status(400).json({ error: 'Bad request.' });
+  // plain text only: control characters out (line breaks stay), at most 500 characters
+  const text = comment.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, '').trim();
+  if (text.length > 500) return res.status(400).json({ error: 'Please keep the comment under 500 characters.' });
+  if (!rates(req.user.id)) return res.status(429).json({ error: 'That is a lot of ratings in one hour. Try again later.' });
+  let g = {};
+  try { g = JSON.parse(await readFile(req.params.id === EXAMPLE_ID ? path.join(EXAMPLE, 'bookcase.json') : guideFile(req.params.id), 'utf8')); } catch { /* names stay empty */ }
+  const row = saveRating({ guideId: req.params.id, userId: req.user.id, stars, comment: text,
+    product: String(g.furniture || g.product || '').slice(0, 100) || null, company: g.company ? String(g.company).slice(0, 60) : null });
+  mirror(`saved a rating of guide ${row.guide_id}`, () => saveRatingCloud(row));
+  res.json({ rating: { stars: row.stars, comment: row.comment, updated: row.updated } });
+});
+// all ratings combined, for admins: per guide (count, average, stars) and the newest comments, without who wrote them
+app.get('/api/ratings', requireUser, (req, res) => {
+  if (!isAdmin(req.user)) return res.status(404).json({ error: 'Not found' });
+  res.json({ guides: ratingSummary(), comments: ratingComments() });
+});
 // the manual a guide was made from: the PDF, or page n as a picture
 app.get('/api/guides/:id/manual.pdf', manualViewable, (req, res) => {
   res.sendFile(path.join(PAGES, req.params.id, 'manual.pdf'), err => err && res.status(404).end());

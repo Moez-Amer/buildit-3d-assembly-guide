@@ -14,11 +14,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db, setLibrary, guideRow, addGuide } from '../server/db.js';
 import { findBrowser } from '../server/render.js';
+import { supabaseConfigured } from '../server/supabase.js';
+import { setProcessedGuidePublic } from '../server/guide-store.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.join(root, 'server', 'data', 'guides');
 const LIB = path.join(root, 'library'), LIB_GUIDES = path.join(LIB, 'guides'), LIB_COVERS = path.join(LIB, 'covers'), LIST = path.join(LIB, 'manuals.json');
 const [cmd, ...rest] = process.argv.slice(2);
+// the copy in Supabase (server/guide-sync.js) gets the same public setting, when Supabase is set up
+async function cloudPublic(id, on) {
+  if (!supabaseConfigured()) return;
+  try { await setProcessedGuidePublic(id, on); } catch (e) { console.log(`Supabase not updated: ${e.message}`); }
+}
 const flag = name => { const i = rest.indexOf(`--${name}`); return i >= 0 ? rest[i + 1] : undefined; };
 const ids = rest.filter((a, i) => !a.startsWith('--') && !rest[i - 1]?.startsWith('--'));
 
@@ -60,6 +67,7 @@ if (!cmd) {
   await writeList(list);
   if (!guideRow(id)) addGuide({ ...g, public: true }, null);
   setLibrary(id, true, { title, article });
+  await cloudPublic(id, true);
   console.log(`Added ${id} as "${title}". Make its cover: node scripts/library.mjs covers ${id}`);
 } else if (cmd === 'remove') {
   if (ids.length !== 1) { console.log('Usage: node scripts/library.mjs remove <id>'); process.exit(1); }
@@ -68,6 +76,7 @@ if (!cmd) {
   await rm(path.join(LIB_GUIDES, `${id}.json`), { force: true });
   await rm(path.join(LIB_COVERS, `${id}.jpg`), { force: true });
   setLibrary(id, false);
+  await cloudPublic(id, false);
   console.log(`Removed ${id} from the library.`);
 } else if (cmd === 'covers') {
   await covers(ids.length ? ids : [...(await readList()).map(m => m.id), 'example-bookcase']);
