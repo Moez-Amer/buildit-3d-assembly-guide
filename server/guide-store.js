@@ -1,5 +1,7 @@
 import { getSupabase } from './supabase.js';
 
+const TIMEOUT_MS = 15000;
+
 export async function saveProcessedGuide(
     guide,
     { ownerId = null, isPublic = false } = {}
@@ -29,7 +31,8 @@ export async function saveProcessedGuide(
                 payload: guide,
             },
             { onConflict: 'id' }
-        );
+        )
+        .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
 
     if (error) {
         throw new Error(`Saving guide failed: ${error.message}`);
@@ -41,7 +44,8 @@ export async function getProcessedGuide(id) {
         .from('processed_guides')
         .select('payload')
         .eq('id', id)
-        .maybeSingle();
+        .maybeSingle()
+        .abortSignal(AbortSignal.timeout(TIMEOUT_MS));
 
     if (error) {
         throw new Error(`Loading guide failed: ${error.message}`);
