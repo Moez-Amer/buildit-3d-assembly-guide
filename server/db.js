@@ -25,6 +25,10 @@ db.exec(`
     stars INTEGER NOT NULL CHECK (stars BETWEEN 1 AND 5), comment TEXT NOT NULL DEFAULT '', product TEXT, company TEXT,
     created TEXT NOT NULL, updated TEXT NOT NULL, PRIMARY KEY (guide_id, user_id));
   CREATE INDEX IF NOT EXISTS ratings_user ON ratings(user_id);
+  -- every time a team member (admin) opens someone else's private guide or manual, one row per admin, guide, kind and day
+  -- (27 Nov 2026): the team may look to find and fix mistakes, and this record shows who looked at what and when
+  CREATE TABLE IF NOT EXISTS admin_views (admin TEXT NOT NULL, guide_id TEXT NOT NULL, what TEXT NOT NULL, day TEXT NOT NULL,
+    first_at TEXT NOT NULL, PRIMARY KEY (admin, guide_id, what, day));
   -- all ratings combined, one row per guide: SELECT * FROM rating_summary
   CREATE VIEW IF NOT EXISTS rating_summary AS
     SELECT guide_id, MAX(product) AS product, MAX(company) AS company, COUNT(*) AS ratings, ROUND(AVG(stars), 2) AS average,
@@ -105,6 +109,16 @@ export const libraryRows = () => db.prepare('SELECT id, product, title, article 
 export function setLibrary(id, on, { title = null, article = null } = {}) {
   return db.prepare('UPDATE guides SET public = ?, title = COALESCE(?, title), article = COALESCE(?, article) WHERE id = ?').run(on ? 1 : 0, title, article, id).changes > 0;
 }
+
+/* ---------- the team looking at someone's guide or manual ---------- */
+/** Records that an admin opened someone else's private guide ("guide") or its manual ("manual"); once per day each. */
+export function noteAdminView(adminEmail, guideId, what) {
+  const t = new Date().toISOString();
+  db.prepare('INSERT OR IGNORE INTO admin_views (admin, guide_id, what, day, first_at) VALUES (?, ?, ?, ?, ?)').run(adminEmail, guideId, what, t.slice(0, 10), t);
+}
+export const adminViews = (guideId = null, limit = 500) => (guideId
+  ? db.prepare('SELECT * FROM admin_views WHERE guide_id = ? ORDER BY first_at DESC LIMIT ?').all(guideId, limit)
+  : db.prepare('SELECT * FROM admin_views ORDER BY first_at DESC LIMIT ?').all(limit));
 
 /* ---------- ratings ---------- */
 export const ratingOf = (guideId, userId) =>

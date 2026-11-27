@@ -16,6 +16,7 @@ const PAGES = {
       <li><b>Your ratings</b> of guides (stars and an optional comment), so we can see which guides are hard to follow. Your team sees them without your email address.</li>
       <li><b>Your own AI key, if you scan with one</b>: we use it only to send that scan to the AI model provider, and forget it when the scan ends. We never save it, write it to a log or show it to anyone. The provider bills that scan to your account.</li>
     </ul>
+    <p><b>Our team can look at your guides and the pages you upload</b>, to find mistakes in the guides and make the app read manuals better (our legitimate interest in a working service, Art. 6(1)(f) GDPR). Only named team members can, they can only look (never change or delete), and every time one of them opens your guide or its pages it is recorded: who, which guide and when. You can ask us for that record, and you can object: write to us and we will not look at your scans. Uploaded photos may show part of your home; take them so they show only the page.</p>
     <p>We use these data only to provide Buildit to you (Art. 6(1)(b) GDPR). If you signed up before scanning is open to everyone, we send you one email when it opens. We do not sell your data and do not use it for advertising.</p>
     <p>Fonts and all other files of the website come from our own server; your browser does not contact other companies when you open Buildit.</p>
     <h2>Who else handles your data</h2>

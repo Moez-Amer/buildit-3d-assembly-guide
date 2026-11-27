@@ -154,10 +154,14 @@ HTTPS is required for getUserMedia (live camera) on phones.
 - Sign-in by email link: `server/auth.js` + `server/db.js` (node:sqlite, `server/data/buildit.db`). Tokens and sessions stored as SHA-256 only;
   link token after `#`, used by POST behind a Continue button that first shows the masked email (`/api/auth/peek`); cookie `__Host-bi_session`.
   CSRF: every /api change needs header `x-buildit: 1` (web/src/api.js adds it) + Sec-Fetch-Site check + SameSite=Lax.
-- Access: guides table (owner, public). Owner or public only; guides from before accounts (owner NULL) only for ADMIN_EMAILS. Others get 404.
-  The original manual (PDF, page pictures, the guide's `manual` field): the owner only; admins only for guides with no owner
-  (27 Nov 2026: admins could open anyone's manual before). Tested with three accounts: other people, admins and signed-out
-  visitors get 404 for someone's guide, manual, rating and delete.
+- Access: guides table (owner, public). A guide: its owner, everyone if public, and the team (ADMIN_EMAILS). Others get 404.
+  The original manual (PDF, page pictures, the guide's `manual` field): the owner and the team, never the public.
+  The team looks at other people's scans to find and fix mistakes (27 Nov 2026), done openly: read only (no delete, no
+  rating), said on the scan card and in the privacy policy (Art. 6(1)(f), people can object by email), and every look at
+  someone else's private guide, manual or help box is recorded in `admin_views` (admin, guide, guide/manual, day;
+  `node scripts/admin-views.mjs [guide id]`). Admins' "My guides" lists those scans under "Other people's scans", without
+  names or emails. Tested with test accounts: other people and signed-out visitors get 404 for someone's guide,
+  manual, rating and delete; admins can open but not delete or rate, and each look is recorded.
 - Ratings (27 Nov 2026): "How helpful was this guide?" on the Done screen. Signed in only, one per person and guide (saving
   again changes it), for any guide the person can open plus the example. SQLite table `ratings` (account deleted → its
   ratings go; guide deleted → its ratings go), view `rating_summary` = all ratings combined per guide. API:

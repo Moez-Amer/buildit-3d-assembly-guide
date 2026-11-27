@@ -20,7 +20,7 @@ import { getSupabase, supabaseConfigured } from './supabase.js';
 import { syncGuide, mirror } from './guide-sync.js';
 import { deleteProcessedGuide } from './guide-store.js';
 import { saveRatingCloud, deleteRatingsCloud } from './rating-store.js';
-import { ratingOf, saveRating, deleteRatingsOfGuide, ratingSummary, ratingComments } from './db.js';
+import { ratingOf, saveRating, deleteRatingsOfGuide, ratingSummary, ratingComments, noteAdminView } from './db.js';
 import { claudeWithKey, OWN_KEY } from './ai.js';
 import { canScanOwnKey } from './auth.js';
 
@@ -103,21 +103,28 @@ const needKey = res => res.status(503).json({ error: 'No AI API key yet. Add ANT
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, ai: !!ai, ...(DEV ? { model: MODEL } : {}) }));
 
-// who may open a guide: everyone for library guides, the owner, and admins for guides from before accounts.
-// Anything else answers "not found", so nobody learns which guide ids exist.
-const canView = (user, row) => !!row && (row.public === 1 || (user && (row.owner === user.id || (!row.owner && isAdmin(user)))));
+// who may open a guide: everyone for library guides, the owner, and the team (admins). Anything else answers "not found",
+// so nobody learns which guide ids exist.
+// The team may open anyone's guide and manual to find and fix mistakes in the app: read only (never delete, never rate),
+// said on the scan card and in the privacy policy, and every look at someone else's private guide is recorded
+// (admin_views: who, which guide, guide or manual, the day; node scripts/admin-views.mjs). People can object by email.
+const teamLook = (user, row) => !!(row && isAdmin(user) && row.owner && row.owner !== user.id && row.public !== 1);
+const canView = (user, row) => !!row && (row.public === 1 || (user && (row.owner === user.id || isAdmin(user))));
 const viewable = (req, res, next) => {
   if (!/^[\w-]+$/.test(req.params.id)) return res.status(400).end();
-  if (!canView(req.user, guideRow(req.params.id))) return res.status(404).json({ error: 'Guide not found' });
+  const row = guideRow(req.params.id);
+  if (!canView(req.user, row)) return res.status(404).json({ error: 'Guide not found' });
+  if (teamLook(req.user, row)) noteAdminView(req.user.email, row.id, 'guide');
   next();
 };
-// the original manual (a third party's document, and what someone photographed at home) stays with whoever scanned
-// it. Admins see it only for guides that belong to nobody (from before accounts, and the library); another person's
-// manual stays theirs, admin or not. A library guide is open to everyone; the manual it was made from is not.
-const ownsGuide = (user, row) => !!(user && row && (row.owner === user.id || (!row.owner && isAdmin(user))));
+// the original manual (and what someone photographed at home): the owner and the team. A library guide is open to
+// everyone; the manual it was made from is not.
+const ownsGuide = (user, row) => !!(user && row && (row.owner === user.id || isAdmin(user)));
 const manualViewable = (req, res, next) => {
   if (!/^[\w-]+$/.test(req.params.id)) return res.status(400).end();
-  if (!ownsGuide(req.user, guideRow(req.params.id))) return res.status(404).end();
+  const row = guideRow(req.params.id);
+  if (!ownsGuide(req.user, row)) return res.status(404).end();
+  if (teamLook(req.user, row)) noteAdminView(req.user.email, row.id, 'manual');
   next();
 };
 const scanning = new Set(); // one scan at a time per account
@@ -328,7 +335,10 @@ app.post('/api/ask', requireUser, async (req, res) => {
   let g;
   try {
     if (id === 'example-bookcase') g = JSON.parse(await readFile(path.join(here, '..', 'web', 'public', 'examples', 'bookcase.json'), 'utf8'));
-    else if (typeof id === 'string' && /^[\w-]+$/.test(id) && canView(req.user, guideRow(id))) g = JSON.parse(await readFile(guideFile(id), 'utf8'));
+    else if (typeof id === 'string' && /^[\w-]+$/.test(id) && canView(req.user, guideRow(id))) {
+      g = JSON.parse(await readFile(guideFile(id), 'utf8'));
+      if (teamLook(req.user, guideRow(id))) noteAdminView(req.user.email, id, 'guide');
+    }
   } catch { /* not found below */ }
   if (!g) return res.status(404).json({ error: 'Guide not found' });
   const n = Math.max(0, Math.min(g.steps.length, Number.parseInt(step, 10) || 0)), s = g.steps[n - 1];
@@ -345,7 +355,9 @@ app.post('/api/ask', requireUser, async (req, res) => {
 app.get('/api/guides', requireUser, (req, res) => {
   const own = guidesOf(req.user.id);
   const old = isAdmin(req.user) ? db.prepare('SELECT id, product, steps, created FROM guides WHERE owner IS NULL AND public = 0 ORDER BY created DESC').all() : [];
-  res.json([...own, ...old.map(g => ({ ...g, old: true }))]);
+  // the team also sees other people's scans, to check them (no names or emails: opening one is recorded, see teamLook)
+  const team = isAdmin(req.user) ? db.prepare('SELECT id, product, steps, created FROM guides WHERE owner IS NOT NULL AND owner <> ? AND public = 0 ORDER BY created DESC LIMIT 500').all(req.user.id) : [];
+  res.json([...own, ...old.map(g => ({ ...g, old: true })), ...team.map(g => ({ ...g, team: true }))]);
 });
 // library guides ("Available manuals"): free to open, no account needed. One card per guide, read from its file
 // (kept until the file changes) plus the example bookcase.
@@ -415,7 +427,7 @@ async function removeGuide(id) {
 /* ---------- ratings: one per person and guide, changed by saving again ---------- */
 // only for a guide the person can open (the example too), and only signed in, so each rating is one real person's
 const EXAMPLE_ID = 'example-bookcase';
-const rateable = (user, id) => id === EXAMPLE_ID || canView(user, guideRow(id));
+const rateable = (user, id) => { const row = guideRow(id); return id === EXAMPLE_ID || (canView(user, row) && !teamLook(user, row)); }; // the team does not rate others' guides
 const rates = limiter(30, 60 * 60e3); // saves per account per hour
 const ratingRoute = (req, res, next) => {
   if (!/^[\w-]{1,64}$/.test(req.params.id) || !rateable(req.user, req.params.id)) return res.status(404).json({ error: 'Guide not found' });

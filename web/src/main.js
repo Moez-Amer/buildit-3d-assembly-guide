@@ -115,14 +115,16 @@ async function listGuides() {
   try { saved = await apiJson('/api/guides'); }
   catch (e) { box.innerHTML = `<p class="status err">${esc(e.message)}</p>`; return; }
   const when = d => { try { return new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return ''; } };
-  const item = g => `<div class="gitem${g.old ? ' is-old' : ''}"><a href="#/guide/${encodeURIComponent(g.id)}"><b>${esc(g.product || 'Untitled guide')}</b><small>${esc(g.note || when(g.created))} · ${g.steps} steps</small></a>${g.id !== 'example-bookcase' ? `<button class="gdel" data-del="${esc(g.id)}" aria-label="Delete ${esc(g.product)}" title="Delete"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>` : ''}</div>`;
-  const own = saved.filter(g => !g.old), old = saved.filter(g => g.old);
+  const item = g => `<div class="gitem${g.old ? ' is-old' : ''}"><a href="#/guide/${encodeURIComponent(g.id)}"><b>${esc(g.product || 'Untitled guide')}</b><small>${esc(g.note || when(g.created))} · ${g.steps} steps</small></a>${g.id !== 'example-bookcase' && !g.team ? `<button class="gdel" data-del="${esc(g.id)}" aria-label="Delete ${esc(g.product)}" title="Delete"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button>` : ''}</div>`;
+  const own = saved.filter(g => !g.old && !g.team), old = saved.filter(g => g.old), team = saved.filter(g => g.team);
   box.closest('.home').classList.toggle('has-guides', own.length > 0);
   $('guides-h').textContent = own.length ? `Your guides (${own.length})` : 'Your guides';
   const none = currentUser()?.canScan ? 'No guides yet. Scan a manual to make your first one.' : 'No guides yet. Once scanning opens, the guides you make are kept here.';
   box.innerHTML = (own.length ? own.map(item).join('') : `<p class="empty">${none}</p>`)
     + `<p class="lbl" style="margin:10px 0 0">Example</p>` + item({ id: 'example-bookcase', product: 'Bookcase 60 × 100 cm', note: 'Example guide', steps: 9 })
-    + (old.length ? `<details class="old"><summary>Older test guides (${old.length})</summary><div class="guides">${old.map(item).join('')}</div></details>` : '');
+    + (old.length ? `<details class="old"><summary>Older test guides (${old.length})</summary><div class="guides">${old.map(item).join('')}</div></details>` : '')
+    // admins: other people's scans, to find and fix mistakes; opening one is recorded on the server
+    + (team.length ? `<details class="old"><summary>Other people's scans (${team.length})</summary><p class="muted" style="margin:8px 0">For finding and fixing mistakes. Read only; each one you open is recorded.</p><div class="guides">${team.map(item).join('')}</div></details>` : '');
 }
 $('guides').onclick = async e => {
   const b = e.target.closest('[data-del]'); if (!b) return;

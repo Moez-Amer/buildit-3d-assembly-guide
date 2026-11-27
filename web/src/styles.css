@@ -157,6 +157,7 @@ main:focus, main:focus-visible { outline: none; box-shadow: none }
 .guides > .lbl { margin: 18px 0 6px !important }
 .notice { background: var(--stock); border-radius: 4px; padding: 14px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start }
 .notice p { margin: 0 }
+.team-note { margin: 0; font-size: 14px; line-height: 1.45 }
 /* own Anthropic API key on the scan card */
 .own-key { border: 1.5px dashed var(--ctrl-line); border-radius: 4px; padding: 12px 14px }
 .own-key summary { cursor: pointer; font-weight: 700 }
