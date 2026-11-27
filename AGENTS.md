@@ -193,7 +193,7 @@ HTTPS is required for getUserMedia (live camera) on phones.
   TRUST_PROXY = number of proxies. `npm start` builds first.
 - Scripts eval/xcheck sign in as the first ADMIN_EMAILS via `scripts/session.mjs`.
 - Built in a build → independent reviewer agent → fix loop (3 rounds).
-- Website look (17 Nov 2026, replaces bold yellow): "Box & label". The page is the flat-pack box: kraft cardboard ground (#CDAD82,
+- Website look (17 Nov 2026, replaces bold yellow): "Box & label". The page is the flat-pack box: kraft cardboard ground (#E2C9A7, brightened from #CDAD82 on 27 Nov 2026,
   faint dot screen), content on white box-sticker labels with a millimetre ruler on the top edge and dashed perforations, black print
   (#171512) for text and primary buttons, Archivo 650 sentence case headings, Atkinson body, JetBrains Mono only for part numbers,
   counts and sizes. Yellow = logo and "new in this step" only; red = "may be wrong" and errors only. One world for website and build

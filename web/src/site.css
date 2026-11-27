@@ -262,7 +262,7 @@ a.navlink { display: inline-flex; align-items: center; text-decoration: none }
 .closer .btn { border-color: #F3E7D3; color: #F3E7D3 }
 .closer .btn:hover:not(:disabled) { background: rgba(243, 231, 211, .1) }
 .closer .btn.primary { background: var(--kraft); border-color: var(--kraft); color: var(--ink) }
-.closer .btn.primary:hover:not(:disabled) { background: #D8BB93 }
+.closer .btn.primary:hover:not(:disabled) { background: #E9D5B9 }
 .closer :focus-visible { outline-color: #F3E7D3; box-shadow: none }
 
 /* ---------- footer ---------- */

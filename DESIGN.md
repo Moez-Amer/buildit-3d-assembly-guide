@@ -2,7 +2,7 @@
 name: Buildit
 description: Your paper flat-pack manual as a 3D guide you can turn, zoom and tick off. Printed on the side of the box.
 colors:
-  kraft: "#CDAD82"
+  kraft: "#E2C9A7"
   kraft-ink: "#3E3325"
   label-white: "#FFFFFF"
   label-stock: "#F6F3EC"
@@ -205,7 +205,7 @@ Cardboard, sticker paper and black print, with two signal colours kept on a very
 
 ### Primary
 - **Print Black** (#171512): all text, primary buttons, current tab, pressed tool buttons, part-number stamps, 3D part labels, the coach mark and help popover, the landing closer and footer. It is the brand colour in practice.
-- **Kraft** (#CDAD82): the ground of every page, always with the printed dot screen (`radial-gradient(rgba(90,60,20,.075) 1px, transparent 1.25px)` at 5px). On the black closer it inverts into the primary button fill.
+- **Kraft** (#E2C9A7): the ground of every page, always with the printed dot screen (`radial-gradient(rgba(90,60,20,.075) 1px, transparent 1.25px)` at 5px). On the black closer it inverts into the primary button fill.
 
 ### Secondary
 - **Marker Yellow** (#FFC21A, ink #2A1E00): in the 3D view only: ghost outlines, the pulse on new parts, and the part labels of parts that are new in this step, plus the small legend swatch that explains it.

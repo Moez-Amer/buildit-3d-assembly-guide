@@ -2,7 +2,7 @@
    with a millimetre ruler along the top edge, text printed in black. One world for the website and the build screen.
    Yellow appears only in the logo and, in the 3D view, for "new in this step". Red only for "may be wrong" and errors. */
 :root {
-  --kraft: #CDAD82; --kraft-ink: #3E3325; --print-line: rgba(23, 21, 18, .32);
+  --kraft: #E2C9A7; --kraft-ink: #3E3325; --print-line: rgba(23, 21, 18, .32);
   --label: #FFFFFF; --stock: #F6F3EC; --stock-2: #EDE7DB;
   --ink: #171512; --ink-2: #2E2A24; --muted: #5F584D; --line: #E6E1D6; --perf: #CFC8BA; --ctrl-line: #D7D0C2;
   --accent: #FFC21A; --accent-ink: #2A1E00; --wood: #D6B98E; --edge: #2A2520;
