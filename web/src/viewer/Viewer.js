@@ -122,10 +122,13 @@ export class Viewer {
     this.ctrl.minDistance = Math.max(0.02, R * 0.04); this.ctrl.maxDistance = Math.max(3, R * 9);
 
     // floor layout in front of the finished piece
-    const fb = this.finalBox, rowMax = Math.max(1800, (fb.max.x - fb.min.x) * 2.4);
-    let cx = fb.min.x - 250, cz = fb.max.z + 220, rowDepth = 0;
-    const order = panels.slice().sort((a, b) => a.p.step - b.p.step);
-    for (const it of order) {
+    const fb = this.finalBox;
+    const order = panels.slice().sort((a, b) =>
+      a.p.part.localeCompare(b.p.part, undefined, { numeric: true }) ||
+      a.p.step - b.p.step
+    );
+    for (let i = 0; i < order.length; i++) {
+      const it = order[i];
       // lay it flat with its busiest face up
       const counts = {}; holesOf[it.p.key].forEach(h => (counts[h.face] = (counts[h.face] || 0) + 1));
       guide.hardware.filter(h => h.panel === it.p.key).forEach(h => (counts[h.dir] = (counts[h.dir] || 0) + 3));
@@ -137,9 +140,87 @@ export class Viewer {
       const TQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(...UP_ROT[up]));
       const fp = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(), new THREE.Vector3(...it.size)).applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(TQ));
       const w = fp.max.x - fp.min.x, d = fp.max.z - fp.min.z, h = fp.max.y - fp.min.y;
-      if (cx + w > fb.min.x - 250 + rowMax) { cx = fb.min.x - 250; cz += rowDepth + 60; rowDepth = 0; }
-      it.trayP = new THREE.Vector3(cx + w / 2, h / 2, cz + d / 2); it.trayQ = TQ;
-      cx += w + 60; rowDepth = Math.max(rowDepth, d);
+      it.footprint = { w, d, h };
+      it.trayQ = TQ;
+    }
+
+    // Group identical boards while keeping their original orientations.
+    const gap = 60;
+    const groups = [];
+
+    for (const it of order) {
+      const last = groups[groups.length - 1];
+
+      if (last && last.part === it.p.part) {
+        last.items.push(it);
+      } else {
+        groups.push({ part: it.p.part, items: [it] });
+      }
+    }
+
+    for (const group of groups) {
+      group.w = group.items.reduce(
+        (sum, it) => sum + it.footprint.w, 0
+      ) + (group.items.length - 1) * gap;
+
+      group.d = Math.max(...group.items.map(it => it.footprint.d));
+    }
+
+    const rowMax = Math.max(
+      1800,
+      (fb.max.x - fb.min.x) * 2.4,
+      ...groups.map(group => group.w)
+    );
+
+    const placed = [];
+
+    for (const group of groups) {
+      const xs = [0, ...placed.map(p => p.x + p.w + gap)];
+      const zs = [0, ...placed.map(p => p.z + p.d + gap)];
+
+      let best = null;
+
+      for (const z of zs) {
+        for (const x of xs) {
+          if (x + group.w > rowMax + 0.001) continue;
+
+          const overlaps = placed.some(p =>
+            x < p.x + p.w + gap &&
+            x + group.w + gap > p.x &&
+            z < p.z + p.d + gap &&
+            z + group.d + gap > p.z
+          );
+
+          if (overlaps) continue;
+
+          if (!best || z < best.z || (z === best.z && x < best.x)) {
+            best = { x, z };
+          }
+        }
+      }
+
+      if (!best) {
+        best = {
+          x: 0,
+          z: Math.max(0, ...placed.map(p => p.z + p.d + gap))
+        };
+      }
+
+      placed.push({ ...best, w: group.w, d: group.d });
+
+      let offsetX = best.x;
+
+      for (const it of group.items) {
+        const { w, d, h } = it.footprint;
+
+        it.trayP = new THREE.Vector3(
+          fb.min.x - 250 + offsetX + w / 2,
+          h / 2,
+          fb.max.z + 220 + best.z + d / 2
+        );
+
+        offsetX += w + gap;
+      }
     }
 
     // groups the manual builds in another position (lying flat, on its back): one turn for the whole group, then
@@ -277,13 +358,27 @@ export class Viewer {
       if (s === 0) this.objs.filter(o => o.kind === PANEL).forEach(o => labels.push({ o, text: o.part, big: true }));
       else {
         const seen = new Set();
+
         for (const o of [...moving, ...added]) {
-          if (o.kind !== PANEL && seen.has(o.part)) continue; seen.add(o.part); // every board its own tag (both B boards)
-          labels.push({ o, text: o.kind === PANEL ? o.part : `${o.part} ${this.guide.parts[o.part].name.toLowerCase()}`, isNew: true });
+          seen.add(o.part);
+
+          labels.push({
+            o,
+            text: o.part,
+            isNew: true,
+            compact: o.kind !== PANEL
+          });
         }
         if (turning[0]) labels.push({ o: turning[0], text: '½ turn clockwise', isNew: true });
         const hosts = new Set(added.map(o => o.parent));
-        hosts.forEach(k => { const p = this.byKey[k]; if (p && !seen.has(p.part)) { labels.push({ o: p, text: p.part }); seen.add(p.part); } });
+
+        hosts.forEach(k => {
+          const p = this.byKey[k];
+
+          if (p && !labels.some(l => l.o === p)) {
+            labels.push({ o: p, text: p.part });
+          }
+        });
       }
       // boards this step works on (moved, or getting fittings): never hidden as loose
       const involved = new Set([...moving, ...[...added, ...turning].map(o => this.byKey[o.parent]).filter(Boolean)]);
@@ -329,7 +424,15 @@ export class Viewer {
       const view = this.wideOnly ? cam.whole : cam.detail || cam.wide; // the view the tags are first seen in
       const eye = view.target.clone().add(view.dir.clone().multiplyScalar((view.r / Math.tan((this.cam.fov * PI) / 360)) * 1.05));
       const boards = this.objs.filter(o => o.kind === PANEL && o.group.visible), boxes = new Map(boards.map(o => [o, new THREE.Box3().setFromObject(o.inner)]));
-      for (const l of pl.labels) if (l.o.kind === PANEL && l.o.group.visible) l.anchor = this.anchorFor(l.o, eye, boards.filter(x => x !== l.o).map(x => boxes.get(x)));
+      for (const l of pl.labels) {
+        if (s > 0 && l.o.kind === PANEL && l.o.group.visible) {
+          l.anchor = this.anchorFor(
+            l.o,
+            eye,
+            boards.filter(x => x !== l.o).map(x => boxes.get(x))
+          );
+        }
+      }
     }
   }
   /** Where on board o its tag goes (in o.group's own coordinates): the candidate spot the eye sees first and that is
@@ -401,7 +504,9 @@ export class Viewer {
     const pulse = 0.5 + 0.5 * Math.sin(now / 260), acc = new THREE.Color(this.colors.accent);
     const fresh = this.finished ? new Set() : new Set([...pl.moving, ...pl.added, ...pl.turning]);
     for (const o of this.objs) {
-      const glow = this.cur > 0 && fresh.has(o) ? (o.kind === PANEL ? 0.05 + 0.1 * pulse : 0.2 + 0.3 * pulse) : 0;
+      const glow = this.cur > 0 && fresh.has(o)
+      ? (o.kind === PANEL ? 0.05 + 0.1 * pulse : 0.15 + 0.85 * pulse)
+      : 0;
       const f = this.flash && this.flash.part === o.part && now < this.flash.until ? 0.55 * pulse + 0.2 : 0;
       o.mats.forEach(m => m.emissive.copy(acc).multiplyScalar(Math.max(glow, f) * (m.userData.glowGain ??= glowGain(m))));
     }
@@ -524,8 +629,13 @@ export class Viewer {
     if (!this.showLabels || !this.plan || this.finished) return;
     for (const l of this.plan[this.cur].labels) {
       const el = document.createElement('div');
-      el.className = 'lab' + (l.isNew ? ' new' : '') + (l.big ? ' big' : ''); el.textContent = l.text;
-      this.labelsEl.append(el); this.labelEls.push({ el, o: l.o, anchor: l.anchor });
+      el.className = 'lab'
+        + (l.isNew ? ' new' : '')
+        + (l.big ? ' big' : '')
+        + (l.compact ? ' compact' : '');
+      el.textContent = l.text;
+      this.labelsEl.append(el);
+      this.labelEls.push({ el, o: l.o, anchor: l.anchor });
     }
   }
   placeLabels() {

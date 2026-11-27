@@ -94,6 +94,12 @@ main:focus, main:focus-visible { outline: none; box-shadow: none }
 .lab::after { content: ""; position: absolute; left: calc(50% - var(--dx, 0px)); bottom: calc(-8px - var(--lift, 0px)); width: 2px; height: calc(9px + var(--lift, 0px)); background: inherit; transform: translateX(-50%) }
 .lab.new { background: var(--accent); color: var(--accent-ink) }
 .lab.big { font-size: 15px; padding: 6px 10px }
+/* Compact labels for individual screws, cam locks and other hardware */
+.lab.compact {
+  font-size: 10px;
+  padding: 3px 5px;
+  border-radius: 3px;
+}
 
 /* ---------- overlays: actual size, all parts ---------- */
 .overlay { position: fixed; inset: 0; background: rgba(23, 21, 18, .5); display: grid; place-items: center; z-index: 40; padding: 16px; animation: fade .2s ease-out }
