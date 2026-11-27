@@ -27,14 +27,16 @@ export class AiError extends Error {
   constructor(message, status, where) { super(message); this.status = status; this.where = where; }
 }
 
-/* Claude: streams text, returns the whole reply. apiKey: a person's own key for one scan (else ANTHROPIC_API_KEY). */
-function anthropic({ model, maxTokens, priceOverride, apiKey }) {
-  const client = new Anthropic(apiKey ? { apiKey } : undefined);
+/* Claude: streams text, returns the whole reply. ask(…, { maxTokens }) may lower the reply limit for one call (the
+   scan's spending limit, server/pricing.js); count() is the API's own token count of a request, free and not billed. */
+function anthropic({ model, maxTokens, priceOverride }) {
+  const client = new Anthropic();
   const price = priceOf(model, priceOverride);
   return {
-    name: 'Claude', model,
-    async ask(messages, { onText, onUsage, signal } = {}) {
-      const stream = client.messages.stream({ model, max_tokens: maxTokens, messages }, { signal });
+    name: 'Claude', model, price, maxTokens,
+    async count(messages) { return (await client.messages.countTokens({ model, messages })).input_tokens; },
+    async ask(messages, { onText, onUsage, signal, maxTokens: cap } = {}) {
+      const stream = client.messages.stream({ model, max_tokens: Math.min(maxTokens, cap || maxTokens), messages }, { signal });
       if (onText) stream.on('text', onText);
       const msg = await stream.finalMessage();
       const u = msg.usage || {}; // input_tokens excludes the cached part; output_tokens includes thinking
@@ -59,10 +61,16 @@ function openaiCompatible({ baseUrl, apiKey, model, maxTokens, reasoning, priceO
   };
   const toMessage = m => ({ role: m.role, content: typeof m.content === 'string' ? m.content : m.content.map(toPart) });
   return {
-    name: model, model,
-    async ask(messages, { onText, onThink, onUsage, signal } = {}) {
+    name: model, model, price, maxTokens,
+    // no counting endpoint here: about 1,600 tokens a picture (the usual cap for one image), 4 characters a token for text
+    async count(messages) {
+      let n = 0;
+      for (const m of messages) for (const b of typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content) n += b.type === 'text' ? Math.ceil(b.text.length / 4) : 1600;
+      return n;
+    },
+    async ask(messages, { onText, onThink, onUsage, signal, maxTokens: cap } = {}) {
       const body = {
-        model, max_tokens: maxTokens, stream: true, messages: messages.map(toMessage),
+        model, max_tokens: Math.min(maxTokens, cap || maxTokens), stream: true, messages: messages.map(toMessage),
         stream_options: { include_usage: true }, // token counts arrive in the last chunk
         ...(openrouter ? { usage: { include: true } } : {}), // OpenRouter adds the real price it charged
         ...(reasoning ? { reasoning_effort: reasoning } : {}),
@@ -114,13 +122,6 @@ export function scanModel(env = process.env) {
     return openaiCompatible({ baseUrl: env.SCAN_BASE_URL, apiKey: env.SCAN_API_KEY, model: env.SCAN_MODEL, maxTokens, reasoning: env.SCAN_REASONING, priceOverride: env.SCAN_PRICE });
   }
   return env.ANTHROPIC_API_KEY ? anthropic({ model: env.CLAUDE_MODEL || 'claude-opus-5-5', maxTokens }) : null;
-}
-
-/* Claude with a person's own API key, for one scan ("bring your own key"). The key lives only in this object, which is
-   gone when the scan ends: it is never written to disk, the database or the log. */
-export const OWN_KEY = /^sk-ant-[\w-]{20,250}$/;
-export function claudeWithKey(apiKey, env = process.env) {
-  return anthropic({ model: env.CLAUDE_MODEL || 'claude-opus-5-5', maxTokens: Number(env.SCAN_MAX_TOKENS || 64000), apiKey });
 }
 
 /* The small model behind "Stuck on this step?": Claude Haiku if there is a Claude key, else the scan model. */

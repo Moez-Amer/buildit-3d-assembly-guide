@@ -12,13 +12,9 @@ const ADMINS = new Set((process.env.ADMIN_EMAILS || '').split(',').map(s => s.tr
 // who may scan their own manual until payments exist: "admins" (default) or "everyone" signed in
 const SCAN_ACCESS = process.env.SCAN_ACCESS === 'everyone' ? 'everyone' : 'admins';
 
-// scanning with one's own Anthropic API key (billed to them): open to everyone signed in unless OWN_KEY_SCANS=0
-const OWN_KEY_SCANS = process.env.OWN_KEY_SCANS !== '0';
-
 export const isAdmin = u => !!u && ADMINS.has(u.email);
 export const canScan = u => !!u && (SCAN_ACCESS === 'everyone' || isAdmin(u));
-export const canScanOwnKey = u => !!u && OWN_KEY_SCANS;
-export const publicUser = u => u && { email: u.email, admin: isAdmin(u), canScan: canScan(u), ownKey: canScanOwnKey(u) };
+export const publicUser = u => u && { email: u.email, admin: isAdmin(u), canScan: canScan(u) };
 
 /* ---------- small helpers ---------- */
 function cookies(req) {

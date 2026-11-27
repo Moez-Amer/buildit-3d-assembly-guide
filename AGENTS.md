@@ -167,11 +167,13 @@ HTTPS is required for getUserMedia (live camera) on phones.
   ratings go; guide deleted → its ratings go), view `rating_summary` = all ratings combined per guide. API:
   `GET|PUT /api/guides/:id/rating` ({stars 1–5, comment ≤ 500 chars, plain text}, 30 saves per account per hour),
   `GET /api/ratings` (admins: per-guide summary + newest comments, without who wrote them). CLI: `node scripts/ratings.mjs [--comments]`.
-- Own Anthropic API key (27 Nov 2026): any signed-in account may scan with its own key, also while scanning on Buildit's key is
-  admin-only (`OWN_KEY_SCANS=0` turns it off; 20 own-key scans per account per day). The scan card's key field sends it in the
-  upload body to `POST /api/analyze?key=own`; the server takes it out of the request at once and uses it only for that scan's
-  AI calls (`claudeWithKey` in server/ai.js). Never stored, logged or sent back; own error texts (`ownKeyFriendly`); the
-  guide's `cost.paid_by` is "own key". The help box still uses Buildit's key.
+- Pricing and scan limits (27 Nov 2026, `server/pricing.js`): one payment per manual by its pages, €1.99 up to 16, €2.99 up
+  to 32, €5.99 up to 60 (VAT included; payments are not built yet; the website's Pricing section shows the same). Before any
+  AI call the server counts a PDF's real pages (pdf.js) and the request's tokens (Anthropic token count, free). A page over
+  4,000 tokens counts as more than one, so a dense upload moves up a tier, and over 60 pages' worth is refused. Each tier
+  has an AI budget ($1.15 / $1.85 / $3.90: the price less VAT, card fees and a 20% margin): the read pass may write only
+  what the budget leaves, and repair/compare are skipped once it is spent (`SCAN_BUDGET=0` lifts it). Saved as the
+  guide's `billing` (admins only). Scanning with one's own API key was removed the same day: one price list for everyone.
 - Supabase (optional, SUPABASE_URL + SUPABASE_SECRET_KEY): a copy for the team, the local SQLite stays the record. Finished guides
   (`processed_guides`, written after the person gets the guide), ratings (`guide_ratings`, view `guide_rating_summary`),
   deletes of guides, ratings and accounts, and the library's public flag (scripts/library.mjs) are mirrored in the background

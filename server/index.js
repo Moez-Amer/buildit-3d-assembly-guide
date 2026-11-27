@@ -21,8 +21,7 @@ import { syncGuide, mirror } from './guide-sync.js';
 import { deleteProcessedGuide } from './guide-store.js';
 import { saveRatingCloud, deleteRatingsCloud } from './rating-store.js';
 import { ratingOf, saveRating, deleteRatingsOfGuide, ratingSummary, ratingComments, noteAdminView } from './db.js';
-import { claudeWithKey, OWN_KEY } from './ai.js';
-import { canScanOwnKey } from './auth.js';
+import { MAX_PAGES, tierFor, outputRoom } from './pricing.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(here, 'data', 'guides');
@@ -37,6 +36,8 @@ const REPAIR = process.env.CHECK_REPAIR !== '0'; // second pass that fixes probl
 // third pass: the model compares pictures of the 3D model with the manual. Off unless RENDER_COMPARE=1: on 14 scans it
 // never corrected a real instruction error, and its pictures show the assembly too small to check (frames the loose parts too)
 const COMPARE = process.env.RENDER_COMPARE === '1';
+// every scan stays within the AI budget of its price tier (server/pricing.js); SCAN_BUDGET=0 lifts it (tests, evaluations)
+const BUDGETS = process.env.SCAN_BUDGET !== '0';
 checkConfig();
 // the library list in the repo decides what is listed: rows for guides this database has not seen, and the names
 await (async function seedLibrary() {
@@ -134,18 +135,20 @@ const MAX_UPLOAD = 80 * 1024 * 1024; // all pages of one scan together
 
 /* Scan → guide. Streams NDJSON lines: {type:"progress"}, then {type:"done", guide} or {type:"error"}. */
 const takePages = (req, res, next) => upload.array('pages', 60)(req, res, err => (err ? res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: friendly(err) }) : next()));
-// scans with the person's own Anthropic API key (?key=own): the key comes in the upload body (never in the URL or a header,
-// which proxies may log), is used for this scan's AI calls and dropped with them; never stored, logged or sent back
-const ownScans = limiter(20, 864e5); // own-key scans per account per day (they still use this server's disk and memory)
+// pages of a PDF, counted on the server with pdf.js (no scripts, no fonts); null when it cannot be read
+let pdfjs = null;
+async function pdfPages(buffer) {
+  try {
+    pdfjs ||= await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const doc = await pdfjs.getDocument({ data: new Uint8Array(buffer), isEvalSupported: false, disableFontFace: true, useSystemFonts: false, verbosity: 0 }).promise;
+    const n = doc.numPages;
+    await doc.destroy();
+    return n;
+  } catch { return null; }
+}
 app.post('/api/analyze', requireUser, (req, res, next) => {
-  req.ownKey = req.query.key === 'own';
-  if (req.ownKey) {
-    if (!canScanOwnKey(req.user)) return res.status(403).json({ error: 'Scanning with your own API key is switched off.', code: 'no_scan' });
-    if (!ownScans(req.user.id)) return res.status(429).json({ error: 'That is a lot of scans for one day. Try again tomorrow.' });
-  } else {
-    if (!canScan(req.user)) return res.status(403).json({ error: 'Scanning your own manual is not open yet.', code: 'no_scan' });
-    if (!ai) return needKey(res);
-  }
+  if (!canScan(req.user)) return res.status(403).json({ error: 'Scanning your own manual is not open yet.', code: 'no_scan' });
+  if (!ai) return needKey(res);
   const size = Number(req.headers['content-length']);
   if (!size) return res.status(411).json({ error: 'The upload had no size. Try again.' });
   if (size > MAX_UPLOAD) return res.status(413).json({ error: 'Too much at once: up to 80 MB per scan. Try fewer pages.' });
@@ -156,12 +159,7 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
 }, takePages, async (req, res) => {
   const user = req.user;
   const files = req.files || [];
-  // the person's own key: taken out of the request at once, so it lives only in this scan's model object
-  const ownKey = req.ownKey ? String(req.body?.api_key ?? '').trim() : '';
-  if (req.body) delete req.body.api_key;
-  if (req.ownKey && !OWN_KEY.test(ownKey)) return res.status(400).json({ error: 'That does not look like an Anthropic API key. It starts with sk-ant-.', code: 'bad_key' });
-  const model = req.ownKey ? claudeWithKey(ownKey) : ai;
-  console.log(`analyze: ${files.length} file(s), ${(files.reduce((n, f) => n + f.size, 0) / 1e6).toFixed(1)} MB → ${model.model}${req.ownKey ? ' (own key)' : ''}`);
+  console.log(`analyze: ${files.length} file(s), ${(files.reduce((n, f) => n + f.size, 0) / 1e6).toFixed(1)} MB → ${MODEL}`);
   if (!files.length) return res.status(400).json({ error: 'No pages were sent.' });
   res.setHeader('content-type', 'application/x-ndjson'); res.setHeader('cache-control', 'no-cache');
   const send = obj => res.write(JSON.stringify(obj) + '\n');
@@ -186,6 +184,24 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
   if (!content.length) { res.end(JSON.stringify({ type: 'error', error: 'That PDF could not be read.' }) + '\n'); return; }
   // cache the pages + prompt so the repair pass does not pay for the images twice
   content.push({ type: 'text', text: ANALYZE_PROMPT, cache_control: { type: 'ephemeral' } });
+  const first = [{ role: 'user', content }];
+  const fail = error => { console.log(`analyze: refused before reading: ${error}`); res.end(JSON.stringify({ type: 'error', error }) + '\n'); };
+
+  // what the scan counts as (server/pricing.js): its pages, a PDF's real pages included, or more when the pages hold
+  // more than a manual's pages do. Counted before any AI call, so a scan that is too big costs nothing.
+  let pages = files.filter(f => !isPdf(f)).length;
+  for (const f of files.filter(isPdf)) pages += (await pdfPages(f.buffer)) ?? 1;
+  if (pages > MAX_PAGES) return fail(`This manual has ${pages} pages, and up to ${MAX_PAGES} fit in one scan. Scan only the pages with the assembly steps, or split it into parts.`);
+  let tokens = null;
+  try { tokens = await ai.count(first); } catch (e) { console.warn('analyze: token count failed, going by pages:', e.message); }
+  const { weighted, tier } = tierFor(pages, tokens);
+  if (!tier) return fail(`These pages hold more than a ${MAX_PAGES}-page manual usually does (a lot of small text?). Scan only the pages with the assembly steps.`);
+  const budget = BUDGETS ? tier.budgetUsd : Infinity;
+  console.log(`analyze: ${pages} pages, ${tokens ?? '?'} tokens → counts as ${weighted} pages, price tier up to ${tier.pages} pages (€${tier.eur}), AI budget ${Number.isFinite(budget) ? '$' + budget.toFixed(2) : 'off'}`);
+  // input prices: the pages are written to the cache once (Claude), then read from it by later passes
+  const [inPrice, , cachedPrice, cacheWritePrice] = ai.price || [0, 0, 0, 0];
+  const spent = () => calls.reduce((s, c) => s + (c.usd || 0), 0);
+  const MIN_REPLY = 4000; // a guide shorter than this is not worth starting
 
   let aborted = false;
   const stop = new AbortController();
@@ -196,7 +212,8 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
   // every reply is kept in server/data/raw/<scan id>-<pass>.txt, so a scan that fails can be looked at without paying again
   const scanId = randomUUID().replace(/-/g, '').slice(0, 12);
   const keepRaw = (pass, text) => mkdir(RAW, { recursive: true }).then(() => writeFile(path.join(RAW, `${scanId}-${pass}.txt`), text)).catch(() => {});
-  const ask = (pass, messages, onText) => model.ask(messages, { onText, signal: stop.signal, onThink: () => {
+  // room: the most output tokens this call may write within the scan's budget (Infinity = no budget)
+  const ask = (pass, messages, onText, room = Infinity) => ai.ask(messages, { onText, maxTokens: Number.isFinite(room) ? room : undefined, signal: stop.signal, onThink: () => {
     // the model reasons before it writes: show that it is alive (at most every 5 s)
     if (Date.now() - thinking > 5000) { if (!thinking) console.log(`${pass}: model is thinking`); thinking = Date.now(); if (pass === 'read') send({ type: 'progress', steps: 0, phase: 'thinking' }); }
   }, onUsage: u => {
@@ -206,12 +223,14 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
   let saved = false;
   try {
     let text = '', lastSent = 0;
-    const first = [{ role: 'user', content }];
+    const readAt = Date.now(); // the pages go into the cache now; it keeps them for 5 minutes after each use
+    const readRoom = outputRoom(budget, 0, (tokens || 0) * (cacheWritePrice || inPrice) / 1e6, ai.price);
+    if (readRoom < MIN_REPLY) throw new Error('These pages hold too much to read within one scan. Scan only the pages with the assembly steps.');
     const raw = await ask('read', first, delta => {
       text += delta;
       const steps = (text.match(/"title"\s*:/g) || []).length;
       if (steps !== lastSent) { lastSent = steps; send({ type: 'progress', steps }); }
-    });
+    }, readRoom);
     if (aborted) return;
     const json = parseJson(raw);
     if (!json) throw new Error('The AI reply was not valid JSON. Try again, or scan fewer pages at once.');
@@ -240,12 +259,20 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
       return lines.length > 60 ? [...lines.slice(0, 60), `... and ${lines.length - 60} more warnings like these: fix the same kind of mistake everywhere it occurs.`] : lines;
     };
 
+    // what a later pass's input costs: the pages from the cache (written again once it has expired, after 5 minutes),
+    // plus the guide so far and the new instructions (about 3 characters a token for JSON)
+    const laterInputUsd = chars => ((tokens || 0) * ((Date.now() - readAt > 270e3 ? cacheWritePrice : cachedPrice) || inPrice) + Math.ceil(chars / 3) * inPrice) / 1e6;
+    const overBudget = pass => console.log(`${pass} skipped: the scan's AI budget is used up ($${spent().toFixed(2)} of $${budget.toFixed(2)})`);
+
     // pass 2: ask the model to fix what is left; keep the fix only if it is better and keeps the steps
-    if (REPAIR && before.error + before.warn > 0) {
+    const repairAsk = REPAIR && before.error + before.warn > 0
+      ? [...first, { role: 'assistant', content: JSON.stringify(guide) }, { role: 'user', content: REPAIR_PROMPT(issueList(checks)) }] : null;
+    const repairRoom = repairAsk ? outputRoom(budget, spent(), laterInputUsd(repairAsk[1].content.length + String(repairAsk[2].content).length), ai.price) : 0;
+    if (repairAsk && repairRoom < 2000) overBudget('repair');
+    else if (repairAsk) {
       send({ type: 'progress', steps: guide.steps.length, phase: 'checking' });
       try {
-        const fixRaw = await ask('repair', [...first, { role: 'assistant', content: JSON.stringify(guide) },
-          { role: 'user', content: REPAIR_PROMPT(issueList(checks)) }]);
+        const fixRaw = await ask('repair', repairAsk, undefined, repairRoom);
         if (aborted) return;
         const fix = readReply(fixRaw);
         if (fix) {
@@ -267,10 +294,13 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
         if (aborted) return;
         const label = v => v.step === 0 ? '3D model: all parts laid out on the floor (parts check).'
           : `3D model at the end of step ${v.step} ("${guide.steps[v.step - 1].title}"${guide.steps[v.step - 1].page != null ? `, manual page ${guide.steps[v.step - 1].page}` : ''}).`;
-        const cmpRaw = await ask('compare', [...first, { role: 'assistant', content: JSON.stringify(guide) }, { role: 'user', content: [
+        const guideJson = JSON.stringify(guide);
+        const cmpRoom = outputRoom(budget, spent(), laterInputUsd(guideJson.length + COMPARE_INTRO.length + COMPARE_PROMPT.length + views.length * 4800), ai.price);
+        if (cmpRoom < 2000) { overBudget('compare'); throw Object.assign(new Error('over budget'), { quiet: true }); }
+        const cmpRaw = await ask('compare', [...first, { role: 'assistant', content: guideJson }, { role: 'user', content: [
           { type: 'text', text: COMPARE_INTRO },
           ...views.flatMap(v => [{ type: 'text', text: label(v) }, { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: v.data } }]),
-          { type: 'text', text: COMPARE_PROMPT }] }]);
+          { type: 'text', text: COMPARE_PROMPT }] }], undefined, cmpRoom);
         if (aborted) return;
         compared = { views: views.length, changed: false };
         const cmp = /^\s*NO_CHANGES\s*$/.test(cmpRaw) ? null : readReply(cmpRaw);
@@ -283,15 +313,17 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
           else { guide = g3; checks = c3; compared.changed = true; }
           if (compared.dropped) console.log('compare: fix dropped,', compared.dropped);
         } else { compared.reply = /NO_CHANGES/.test(cmpRaw) ? 'no changes' : 'not valid JSON'; console.log('compare:', compared.reply); }
-      } catch (e) { if (aborted) return; console.warn('compare pass skipped:', e.message); }
+      } catch (e) { if (aborted) return; if (!e.quiet) console.warn('compare pass skipped:', e.message); }
     }
 
     guide.id = scanId;
     delete guide.example; // only the built-in example may hide the accuracy notes, never a scan (or text planted in a manual)
     const total = calls.every(c => c.usd != null) ? Math.round(calls.reduce((s, c) => s + c.usd, 0) * 10000) / 10000 : null;
     console.log(`scan cost: ${total == null ? 'incomplete (a call had no price)' : '$' + total.toFixed(4)}`);
-    const stored = { ...guide, created: new Date().toISOString(), pages: files.length, model: model.model, check: { ...countIssues(checks), autofixed, repaired, compared },
-      cost: { usd: total, calls, ...(req.ownKey ? { paid_by: 'own key' } : {}) } };
+    const stored = { ...guide, created: new Date().toISOString(), pages, model: MODEL, check: { ...countIssues(checks), autofixed, repaired, compared },
+      cost: { usd: total, calls },
+      // the price tier this scan falls in and its AI budget (server/pricing.js), for when paid scans open
+      billing: { pages, counted_as: weighted, tokens, tier_pages: tier.pages, price_eur: tier.eur, budget_usd: Number.isFinite(budget) ? budget : null } };
     // keep the manual: the PDF itself, or the page pictures when they were made from a PDF (photos are not in page order)
     try {
       const dir = path.join(PAGES, guide.id), pdf = files.find(isPdf);
@@ -307,14 +339,14 @@ app.post('/api/analyze', requireUser, (req, res, next) => {
     // files above are removed again (finally, below)
     try { addGuide(stored, user.id); } catch { throw Object.assign(new Error('Your account was deleted, so the guide was not kept.'), { code: 'gone' }); }
     saved = true;
-    const shown = isAdmin(user) ? stored : (({ cost, model, check, ...rest }) => rest)(stored);
+    const shown = isAdmin(user) ? stored : (({ cost, model, check, billing, ...rest }) => rest)(stored);
     send({ type: 'done', guide: shown });
     // the copy in Supabase after the person has their guide: a slow or failed cloud write never holds them up
     mirror(`saved guide ${stored.id}`, () => syncGuide(stored));
   } catch (e) {
     if (!aborted) console.error('analyze failed:', e?.status || '', e?.message, e?.status ? '' : `\n${String(e?.stack || '').split('\n').slice(1, 4).join('\n')}`);
     const pdfRejected = files.some(isPdf) && e?.status === 400 && /pdf|document/i.test(e?.message || '');
-    if (!aborted) send({ type: 'error', error: req.ownKey ? ownKeyFriendly(e) : friendly(e), ...(pdfRejected ? { code: 'pdf_rejected', detail: apiReason(e) } : {}) });
+    if (!aborted) send({ type: 'error', error: friendly(e), ...(pdfRejected ? { code: 'pdf_rejected', detail: apiReason(e) } : {}) });
   } finally {
     // a scan that did not end in a saved guide (stopped, failed, account gone) leaves nothing behind
     if (!saved) await removeGuide(scanId).catch(() => {});
@@ -514,15 +546,6 @@ function friendly(e) {
   if (s === 400 && /pdf|document/i.test(e?.message)) return `The AI could not open that PDF (${apiReason(e)}).`;
   if (s === 529 || s >= 500) return 'The AI is busy right now. Try again in a minute.';
   return e?.message || 'Something went wrong.';
-}
-// the same for a scan with the person's own key: the problem is with their Anthropic account, not Buildit's
-function ownKeyFriendly(e) {
-  const s = e?.status;
-  if (s === 401) return 'Anthropic did not accept your API key. Check it in the Anthropic Console, under API keys.';
-  if (s === 403) return `Your API key may not use this model (${apiReason(e)}).`;
-  if (s === 402 || /credit balance/i.test(e?.message)) return 'Your Anthropic account is out of credit. Add credit in the Anthropic Console and try again.';
-  if (s === 429) return 'Your Anthropic account reached its rate limit. Wait a minute and try again.';
-  return friendly(e);
 }
 
 app.listen(PORT, () => console.log(`Buildit API on http://localhost:${PORT}  (AI: ${ai ? MODEL : 'off, no API key'})`))

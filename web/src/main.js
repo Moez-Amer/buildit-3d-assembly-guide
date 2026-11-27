@@ -101,12 +101,9 @@ document.addEventListener('click', e => {
 
 /* ---------- my guides ---------- */
 function renderScanAccess() {
-  const u = currentUser(), open = !!u?.canScan || !!u?.ownKey;
+  const open = !!currentUser()?.canScan;
   $('scan-closed').hidden = open; $('scan-open').hidden = !open; $('tips-card').hidden = !open;
   $('scan-card').querySelector('h2').textContent = open ? 'Scan a manual' : 'Scan your own manual';
-  // own Anthropic API key: optional with scanning open to you, needed without it
-  $('own-key').hidden = !u?.ownKey;
-  if (u?.ownKey && !u.canScan) { $('own-key').open = true; $('own-key-sum').textContent = 'Your Anthropic API key (needed for now)'; }
 }
 async function listGuides() {
   const box = $('guides');

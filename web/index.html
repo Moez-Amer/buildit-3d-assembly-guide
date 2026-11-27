@@ -132,17 +132,17 @@
     <section class="band pricing" id="pricing" aria-labelledby="price-h">
       <div class="pricing-text">
         <h2 id="price-h">Pricing</h2>
-        <p class="sub">No subscription. Paid scans open soon: you pay once per manual.</p>
-        <p class="fine">Prices are planned and may change before launch. In euros: from €1.99. Your guide stays in your account; delete it any time.</p>
+        <p class="sub">No subscription. You pay once per manual, by its number of pages.</p>
+        <!-- the same tiers as server/pricing.js: keep the two in step -->
+        <p class="fine">Prices in euros, VAT included. Up to 60 pages per scan; a page packed with small print counts as more than one. Paid scans open soon, and prices may change until then. Your guide stays in your account; delete it any time.</p>
       </div>
       <div class="label">
         <span class="ruler" aria-hidden="true"></span>
         <ul class="prices">
-          <li><div><h3>Ready-made guides <span class="soon">Coming soon</span></h3><p>A library of guides for popular furniture, each one checked by a person against the paper manual. No account needed. For now there is one example guide to try.</p></div><b>Free</b></li>
-          <li><div><h3>Your own manual, up to 16 pages <span class="soon">Opening soon</span></h3></div><b>£1.99</b></li>
-          <li><div><h3>Up to 32 pages</h3></div><b>£2.99</b></li>
-          <li><div><h3>Up to 60 pages</h3></div><b>£4.99</b></li>
-        </ul>
+          <li><div><h3><a href="#/manuals">Available manuals</a></h3><p>Guides for furniture we have already read. Open them on any phone or computer, no account needed.</p></div><b>Free</b></li>
+          <li><div><h3>Your own manual, up to 16 pages <span class="soon">Opening soon</span></h3><p>For example a chair or a shoe rack.</p></div><b>€1.99</b></li>
+          <li><div><h3>Up to 32 pages</h3><p>For example an office chair or a desk.</p></div><b>€2.99</b></li>
+          <li><div><h3>Up to 60 pages</h3><p>For example a wardrobe or a chest of drawers.</p></div><b>€5.99</b></li>        </ul>
       </div>
     </section>
 
@@ -231,18 +231,6 @@
             <div class="empty" id="thumbs-empty">No pages yet.</div>
           </div>
           <p class="muted team-note">To find and fix mistakes, our team can look at your guides and the pages you upload. Every look is recorded. <a href="#/privacy">Privacy</a></p>
-          <!-- scanning with the person's own Anthropic API key: required while scanning is not open to them, else optional -->
-          <details class="own-key" id="own-key" hidden>
-            <summary id="own-key-sum">Use your own Anthropic API key</summary>
-            <label for="api-key">Anthropic API key</label>
-            <input class="field" id="api-key" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="sk-ant-…">
-            <ul class="key-facts">
-              <li>Used for this one scan, then forgotten. Never saved, never written to a log, never shown to anyone.</li>
-              <li>It goes over an encrypted connection to our server, which uses it only to send this scan to Anthropic.</li>
-              <li>Anthropic bills the scan to your account: usually $0.20–2.50 per manual.</li>
-            </ul>
-            <p class="muted"><b>Safest:</b> in the Anthropic Console, make a new key just for Buildit, set a spending limit, and delete the key after your scan. Then it is useless to anyone, us included.</p>
-          </details>
           <div class="status" id="status" aria-live="polite"></div>
           <!-- Progress and preparation tips during AI generation -->
           <div id="scan-wait" class="scan-wait" hidden>
